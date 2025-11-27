@@ -302,6 +302,25 @@ pub fn play_recording(app: tauri::AppHandle, path: String, speed: f32) -> Result
         const MIN_MOUSE_MOVE_INTERVAL_MS: u64 = 5; // 5ms minimum between recorded mouse moves
         
         loop {
+            // Check if Esc key is pressed to stop playback
+            #[cfg(target_os = "windows")]
+            {
+                use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+                const VK_ESCAPE: i32 = 0x1B;
+                unsafe {
+                    // GetAsyncKeyState returns negative value if key is currently pressed
+                    // The high bit (0x8000) indicates the key is currently down
+                    let key_state = GetAsyncKeyState(VK_ESCAPE) as u16;
+                    if key_state & 0x8000 != 0 {
+                        eprintln!("Esc key pressed, stopping playback");
+                        if let Ok(mut state) = replay_state.lock() {
+                            state.stop();
+                        }
+                        break;
+                    }
+                }
+            }
+            
             // Safety check: prevent infinite loops
             event_count += 1;
             if event_count > MAX_EVENTS {
@@ -396,6 +415,12 @@ pub fn stop_playback() -> Result<(), String> {
 
     state.stop();
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_playback_status() -> Result<bool, String> {
+    let state = REPLAY_STATE.lock().map_err(|e| e.to_string())?;
+    Ok(state.is_playing)
 }
 
 #[tauri::command]

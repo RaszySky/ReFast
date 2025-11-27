@@ -21,6 +21,7 @@ fn main() {
             delete_recording,
             play_recording,
             stop_playback,
+            get_playback_status,
             get_playback_progress,
         ])
         .run(tauri::generate_context!())

@@ -30,6 +30,10 @@ export const tauriApi = {
     return invoke("stop_playback");
   },
 
+  async getPlaybackStatus(): Promise<boolean> {
+    return invoke("get_playback_status");
+  },
+
   async getPlaybackProgress(): Promise<number> {
     return invoke("get_playback_progress");
   },

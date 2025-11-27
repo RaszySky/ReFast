@@ -39,20 +39,58 @@ function App() {
 
     const interval = setInterval(async () => {
       try {
+        // Check if playback is still active
+        const isPlaying = await tauriApi.getPlaybackStatus();
+        if (!isPlaying) {
+          // Playback has stopped
+          setStatus("idle");
+          setMessage("回放已停止");
+          setProgress(0);
+          return;
+        }
+
         const progress = await tauriApi.getPlaybackProgress();
         setProgress(progress);
         
-        // If progress is 100%, stop polling
+        // If progress is 100%, playback is complete
         if (progress >= 100) {
           setStatus("idle");
           setMessage("回放已完成");
         }
       } catch (error) {
-        console.error("Failed to get playback progress:", error);
+        // If getting status/progress fails, playback has likely stopped
+        console.error("Failed to get playback status/progress:", error);
+        setStatus("idle");
+        setMessage("回放已停止");
+        setProgress(0);
       }
     }, 100); // Update every 100ms
 
     return () => clearInterval(interval);
+  }, [status]);
+
+  // Listen for Esc key to stop playback
+  useEffect(() => {
+    if (status !== "playing") {
+      return;
+    }
+
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      if (event.key === "Escape" || event.keyCode === 27) {
+        event.preventDefault();
+        try {
+          await tauriApi.stopPlayback();
+          setStatus("idle");
+          setMessage("回放已停止（按 Esc 键）");
+          setProgress(0);
+        } catch (error) {
+          console.error("Failed to stop playback:", error);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [status]);
 
   const loadRecordings = async () => {
