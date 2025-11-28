@@ -574,10 +574,37 @@ export function LauncherWindow() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 ${
+                    <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 overflow-hidden ${
                       index === selectedIndex ? "bg-blue-400" : "bg-gray-200"
                     }`}>
-                      {result.type === "file" ? (
+                      {result.type === "app" && result.app?.icon ? (
+                        <img 
+                          src={result.app.icon} 
+                          alt={result.displayName}
+                          className="w-8 h-8 object-contain"
+                          style={{ imageRendering: 'auto' as const }}
+                          onError={(e) => {
+                            // Fallback to default icon if image fails to load
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent && !parent.querySelector('svg')) {
+                              const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                              svg.setAttribute('class', `w-5 h-5 ${index === selectedIndex ? 'text-white' : 'text-gray-500'}`);
+                              svg.setAttribute('fill', 'none');
+                              svg.setAttribute('stroke', 'currentColor');
+                              svg.setAttribute('viewBox', '0 0 24 24');
+                              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                              path.setAttribute('stroke-linecap', 'round');
+                              path.setAttribute('stroke-linejoin', 'round');
+                              path.setAttribute('stroke-width', '2');
+                              path.setAttribute('d', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z');
+                              svg.appendChild(path);
+                              parent.appendChild(svg);
+                            }
+                          }}
+                        />
+                      ) : result.type === "file" ? (
                         <svg
                           className={`w-5 h-5 ${
                             index === selectedIndex ? "text-white" : "text-gray-500"

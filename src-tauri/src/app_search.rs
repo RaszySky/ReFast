@@ -122,22 +122,22 @@ pub mod windows {
                 }
             } else if path.extension().and_then(|s| s.to_str()) == Some("lnk") {
                 // Fast path: use .lnk filename directly without parsing
-                // This is much faster - we can parse later if needed
+                // Don't extract icon during scan to keep it fast - extract in background later
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                     apps.push(AppInfo {
                         name: name.to_string(),
                         path: path.to_string_lossy().to_string(),
-                        icon: None,
+                        icon: None, // Will be extracted in background
                         description: None,
                     });
                 }
             } else if path.extension().and_then(|s| s.to_str()) == Some("exe") {
-                // Direct executable
+                // Direct executable - don't extract icon during scan to keep it fast
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                     apps.push(AppInfo {
                         name: name.to_string(),
                         path: path.to_string_lossy().to_string(),
-                        icon: None,
+                        icon: None, // Will be extracted in background
                         description: None,
                     });
                 }
@@ -145,6 +145,96 @@ pub mod windows {
         }
 
         Ok(())
+    }
+
+    // Extract icon from file and convert to base64 PNG
+    pub fn extract_icon_base64(file_path: &Path) -> Option<String> {
+        // Use PowerShell to extract icon and convert to base64
+        let path_str = file_path.to_string_lossy().replace('\'', "''");
+        let ps_command = format!(
+            r#"
+            try {{
+                $path = '{}'
+                if (Test-Path $path) {{
+                    $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($path)
+                    if ($icon) {{
+                        $bitmap = $icon.ToBitmap()
+                        $ms = New-Object System.IO.MemoryStream
+                        $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+                        $bytes = $ms.ToArray()
+                        $ms.Close()
+                        $icon.Dispose()
+                        $bitmap.Dispose()
+                        [Convert]::ToBase64String($bytes)
+                    }}
+                }}
+            }} catch {{
+                # Silently fail
+            }}
+            "#,
+            path_str
+        );
+
+        let output = Command::new("powershell")
+            .args(&["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .ok()?;
+
+        if output.status.success() {
+            let base64 = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !base64.is_empty() {
+                return Some(format!("data:image/png;base64,{}", base64));
+            }
+        }
+        None
+    }
+
+    // Extract icon from .lnk file target
+    pub fn extract_lnk_icon_base64(lnk_path: &Path) -> Option<String> {
+        // First, get the target path of the .lnk file
+        let path_str = lnk_path.to_string_lossy().replace('\'', "''");
+        let ps_command = format!(
+            r#"
+            try {{
+                $shell = New-Object -ComObject WScript.Shell
+                $shortcut = $shell.CreateShortcut('{}')
+                $targetPath = $shortcut.TargetPath
+                if ($targetPath -and (Test-Path $targetPath)) {{
+                    $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($targetPath)
+                    if ($icon) {{
+                        $bitmap = $icon.ToBitmap()
+                        $ms = New-Object System.IO.MemoryStream
+                        $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+                        $bytes = $ms.ToArray()
+                        $ms.Close()
+                        $icon.Dispose()
+                        $bitmap.Dispose()
+                        [Convert]::ToBase64String($bytes)
+                    }}
+                }}
+            }} catch {{
+                # Silently fail
+            }}
+            "#,
+            path_str
+        );
+
+        let output = Command::new("powershell")
+            .args(&["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .ok()?;
+
+        if output.status.success() {
+            let base64 = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !base64.is_empty() {
+                return Some(format!("data:image/png;base64,{}", base64));
+            }
+        }
+        None
     }
 
     fn parse_lnk_file(lnk_path: &Path) -> Result<AppInfo, String> {

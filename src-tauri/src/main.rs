@@ -161,8 +161,19 @@ fn main() {
                         }
                     }
                 }
-                // Start background scan to update cache (async, doesn't block)
-                if let Ok(apps) = app_search::windows::scan_start_menu() {
+                // Start background scan to update cache and extract icons (async, doesn't block)
+                if let Ok(mut apps) = app_search::windows::scan_start_menu() {
+                    // Extract icons in background (batch process)
+                    for app in apps.iter_mut() {
+                        if app.icon.is_none() {
+                            let path = std::path::Path::new(&app.path);
+                            if path.extension().and_then(|s| s.to_str()) == Some("lnk") {
+                                app.icon = app_search::windows::extract_lnk_icon_base64(path);
+                            } else if path.extension().and_then(|s| s.to_str()) == Some("exe") {
+                                app.icon = app_search::windows::extract_icon_base64(path);
+                            }
+                        }
+                    }
                     if let Ok(mut cache_guard) = APP_CACHE.lock() {
                         *cache_guard = Some(apps.clone());
                         // Save to disk
