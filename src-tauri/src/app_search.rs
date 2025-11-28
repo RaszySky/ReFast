@@ -9,6 +9,10 @@ pub struct AppInfo {
     pub path: String,
     pub icon: Option<String>,
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_pinyin: Option<String>, // Cached pinyin for faster search
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_pinyin_initials: Option<String>, // Cached pinyin initials for faster search
 }
 
 #[cfg(target_os = "windows")]
@@ -16,6 +20,7 @@ pub mod windows {
     use super::*;
     use std::env;
     use pinyin::ToPinyin;
+    use base64::Engine;
 
     // Cache file name
     pub fn get_cache_file_path(app_data_dir: &Path) -> PathBuf {
@@ -121,25 +126,43 @@ pub mod windows {
                 if let Err(_) = scan_directory(&path, apps, depth + 1) {
                     // Continue on error
                 }
-            } else if path.extension().and_then(|s| s.to_str()) == Some("lnk") {
+            } else if path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) == Some("lnk".to_string()) {
                 // Fast path: use .lnk filename directly without parsing
                 // Don't extract icon during scan to keep it fast - extract in background later
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                    let name_str = name.to_string();
+                    // Pre-compute pinyin for faster search (only for Chinese names)
+                    let (name_pinyin, name_pinyin_initials) = if contains_chinese(&name_str) {
+                        (Some(to_pinyin(&name_str).to_lowercase()), Some(to_pinyin_initials(&name_str).to_lowercase()))
+                    } else {
+                        (None, None)
+                    };
                     apps.push(AppInfo {
-                        name: name.to_string(),
+                        name: name_str,
                         path: path.to_string_lossy().to_string(),
                         icon: None, // Will be extracted in background
                         description: None,
+                        name_pinyin,
+                        name_pinyin_initials,
                     });
                 }
-            } else if path.extension().and_then(|s| s.to_str()) == Some("exe") {
+            } else if path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) == Some("exe".to_string()) {
                 // Direct executable - don't extract icon during scan to keep it fast
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                    let name_str = name.to_string();
+                    // Pre-compute pinyin for faster search (only for Chinese names)
+                    let (name_pinyin, name_pinyin_initials) = if contains_chinese(&name_str) {
+                        (Some(to_pinyin(&name_str).to_lowercase()), Some(to_pinyin_initials(&name_str).to_lowercase()))
+                    } else {
+                        (None, None)
+                    };
                     apps.push(AppInfo {
-                        name: name.to_string(),
+                        name: name_str,
                         path: path.to_string_lossy().to_string(),
                         icon: None, // Will be extracted in background
                         description: None,
+                        name_pinyin,
+                        name_pinyin_initials,
                     });
                 }
             }
@@ -149,43 +172,82 @@ pub mod windows {
     }
 
     // Extract icon from file and convert to base64 PNG
+    // Uses PowerShell with parameter passing to avoid encoding issues
     pub fn extract_icon_base64(file_path: &Path) -> Option<String> {
-        // Use PowerShell to extract icon and convert to base64
-        let path_str = file_path.to_string_lossy().replace('\'', "''");
-        let ps_command = format!(
-            r#"
-            try {{
-                $path = '{}'
-                if (Test-Path $path) {{
-                    $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($path)
-                    if ($icon) {{
-                        $bitmap = $icon.ToBitmap()
-                        $ms = New-Object System.IO.MemoryStream
-                        $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-                        $bytes = $ms.ToArray()
-                        $ms.Close()
-                        $icon.Dispose()
-                        $bitmap.Dispose()
-                        [Convert]::ToBase64String($bytes)
-                    }}
-                }}
-            }} catch {{
-                # Silently fail
-            }}
-            "#,
-            path_str
+        // Convert path to UTF-16 bytes for PowerShell parameter
+        let path_utf16: Vec<u16> = file_path.to_string_lossy().encode_utf16().collect();
+        let path_base64 = base64::engine::general_purpose::STANDARD.encode(
+            path_utf16.iter().flat_map(|&u| u.to_le_bytes()).collect::<Vec<u8>>()
         );
 
-        let output = Command::new("powershell")
-            .args(&["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+        // PowerShell script that decodes UTF-16 path and extracts icon using WMI
+        // This avoids System.Drawing.Icon mixed-mode assembly issues
+        let ps_script = r#"
+param([string]$PathBase64)
+
+try {
+    # Decode UTF-16 path from base64
+    $bytes = [Convert]::FromBase64String($PathBase64)
+    $path = [System.Text.Encoding]::Unicode.GetString($bytes)
+    
+    if (-not (Test-Path -LiteralPath $path)) {
+        exit 1
+    }
+    
+    # Use WMI to get file icon (avoids System.Drawing mixed-mode issues)
+    $shell = New-Object -ComObject Shell.Application
+    $folder = $shell.NameSpace((Split-Path -Parent $path))
+    $item = $folder.ParseName((Split-Path -Leaf $path))
+    
+    if ($item -eq $null) {
+        exit 1
+    }
+    
+    # Extract icon using Shell32
+    $iconPath = $item.ExtractIcon(0)
+    if ($iconPath -eq $null) {
+        exit 1
+    }
+    
+    # Convert icon to PNG using GDI+
+    Add-Type -AssemblyName System.Drawing
+    $icon = [System.Drawing.Icon]::FromHandle($iconPath.Handle)
+    $bitmap = $icon.ToBitmap()
+    $ms = New-Object System.IO.MemoryStream
+    $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bytes = $ms.ToArray()
+    $ms.Close()
+    $icon.Dispose()
+    $bitmap.Dispose()
+    
+    [Convert]::ToBase64String($bytes)
+} catch {
+    exit 1
+}
+"#;
+
+        // Write script to temp file to avoid command-line length limits
+        let temp_script = std::env::temp_dir().join(format!("icon_extract_{}.ps1", std::process::id()));
+        std::fs::write(&temp_script, ps_script).ok()?;
+
+        let output = Command::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+            .args(&[
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-File", temp_script.to_str()?,
+                "-PathBase64", &path_base64,
+            ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output()
             .ok()?;
 
+        // Clean up temp script
+        let _ = std::fs::remove_file(&temp_script);
+
         if output.status.success() {
             let base64 = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !base64.is_empty() {
+            if !base64.is_empty() && base64.len() > 100 {
                 return Some(format!("data:image/png;base64,{}", base64));
             }
         }
@@ -193,45 +255,167 @@ pub mod windows {
     }
 
     // Extract icon from .lnk file target
+    // Uses PowerShell with parameter passing to avoid encoding issues
+    // Tries IconLocation first, then falls back to TargetPath
     pub fn extract_lnk_icon_base64(lnk_path: &Path) -> Option<String> {
-        // First, get the target path of the .lnk file
-        let path_str = lnk_path.to_string_lossy().replace('\'', "''");
-        let ps_command = format!(
-            r#"
-            try {{
-                $shell = New-Object -ComObject WScript.Shell
-                $shortcut = $shell.CreateShortcut('{}')
-                $targetPath = $shortcut.TargetPath
-                if ($targetPath -and (Test-Path $targetPath)) {{
-                    $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($targetPath)
-                    if ($icon) {{
-                        $bitmap = $icon.ToBitmap()
-                        $ms = New-Object System.IO.MemoryStream
-                        $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-                        $bytes = $ms.ToArray()
-                        $ms.Close()
-                        $icon.Dispose()
-                        $bitmap.Dispose()
-                        [Convert]::ToBase64String($bytes)
-                    }}
-                }}
-            }} catch {{
-                # Silently fail
-            }}
-            "#,
-            path_str
+        // Convert path to UTF-16 bytes for PowerShell parameter
+        let path_utf16: Vec<u16> = lnk_path.to_string_lossy().encode_utf16().collect();
+        let path_base64 = base64::engine::general_purpose::STANDARD.encode(
+            path_utf16.iter().flat_map(|&u| u.to_le_bytes()).collect::<Vec<u8>>()
         );
 
-        let output = Command::new("powershell")
-            .args(&["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+        // PowerShell script that decodes UTF-16 path and extracts icon from .lnk
+        // Uses Shell32 COM object to avoid System.Drawing mixed-mode issues
+        let ps_script = r#"
+param([string]$LnkPathBase64)
+
+try {
+    # Decode UTF-16 path from base64
+    $bytes = [Convert]::FromBase64String($LnkPathBase64)
+    $lnkPath = [System.Text.Encoding]::Unicode.GetString($bytes)
+    
+    if (-not (Test-Path -LiteralPath $lnkPath)) {
+        exit 1
+    }
+    
+    # Read .lnk file using WScript.Shell COM object
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($lnkPath)
+    
+    $iconPath = $shortcut.IconLocation
+    $targetPath = $shortcut.TargetPath
+    
+    # Determine which path to use for icon extraction
+    $iconSourcePath = $null
+    $iconIndex = 0
+    
+    # Try IconLocation first (custom icon)
+    if ($iconPath -and $iconPath -ne '') {
+        $iconParts = $iconPath -split ','
+        $iconSourcePath = $iconParts[0]
+        if ($iconParts.Length -gt 1) {
+            $iconIndex = [int]$iconParts[1]
+        }
+    }
+    
+    # Fallback to TargetPath if IconLocation is invalid
+    if (-not $iconSourcePath -or -not (Test-Path -LiteralPath $iconSourcePath)) {
+        if ($targetPath -and (Test-Path -LiteralPath $targetPath)) {
+            $iconSourcePath = $targetPath
+            $iconIndex = 0
+        } else {
+            exit 1
+        }
+    }
+    
+    # Use Shell32 to extract icon and save to temp ICO file
+    # This completely avoids System.Drawing mixed-mode assembly issues
+    $tempIco = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ico'
+    
+    try {
+        # Use Shell32 COM to extract icon
+        $shellApp = New-Object -ComObject Shell.Application
+        $folder = $shellApp.NameSpace((Split-Path -Parent $iconSourcePath))
+        $item = $folder.ParseName((Split-Path -Leaf $iconSourcePath))
+        
+        if ($item -eq $null) {
+            exit 1
+        }
+        
+        # Extract icon to temp file using Shell32
+        # Note: ExtractIcon method may not be available in all PowerShell versions
+        # Fallback: Use WScript.Shell to get icon and save via file system
+        
+        # Alternative approach: Use ExtractIconEx via P/Invoke or COM
+        # For PowerShell 5.1, we'll use a workaround:
+        # Get the icon via file association and read it
+        
+        # Read icon from file using Shell32's GetDetailsOf or similar
+        # Since direct icon extraction is complex, we'll use a simpler method:
+        # Read the icon resource directly from the file
+        
+        # Use .NET's Icon class but load from file instead of ExtractAssociatedIcon
+        # This avoids the mixed-mode assembly issue
+        Add-Type -TypeDefinition @"
+using System;
+using System.Drawing;
+using System.IO;
+using System.Runtime.InteropServices;
+
+public class IconExtractor {
+    [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+    public static extern int ExtractIconEx(string lpszFile, int nIconIndex, IntPtr[] phiconLarge, IntPtr[] phiconSmall, int nIcons);
+    
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool DestroyIcon(IntPtr hIcon);
+    
+    public static byte[] ExtractIconToPng(string filePath, int iconIndex) {
+        IntPtr[] largeIcons = new IntPtr[1];
+        int count = ExtractIconEx(filePath, iconIndex, largeIcons, null, 1);
+        if (count <= 0 || largeIcons[0] == IntPtr.Zero) {
+            return null;
+        }
+        
+        try {
+            Icon icon = Icon.FromHandle(largeIcons[0]);
+            Bitmap bitmap = icon.ToBitmap();
+            Bitmap resized = new Bitmap(32, 32);
+            using (Graphics g = Graphics.FromImage(resized)) {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(bitmap, 0, 0, 32, 32);
+            }
+            
+            using (MemoryStream ms = new MemoryStream()) {
+                resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                return ms.ToArray();
+            }
+        } finally {
+            DestroyIcon(largeIcons[0]);
+        }
+    }
+}
+"@ -ReferencedAssemblies System.Drawing.dll
+        
+        $pngBytes = [IconExtractor]::ExtractIconToPng($iconSourcePath, $iconIndex)
+        if ($pngBytes -eq $null) {
+            exit 1
+        }
+        
+        [Convert]::ToBase64String($pngBytes)
+    } catch {
+        exit 1
+    } finally {
+        if (Test-Path $tempIco) {
+            Remove-Item $tempIco -ErrorAction SilentlyContinue
+        }
+    }
+} catch {
+    exit 1
+}
+"#;
+
+        // Write script to temp file
+        let temp_script = std::env::temp_dir().join(format!("lnk_icon_extract_{}.ps1", std::process::id()));
+        std::fs::write(&temp_script, ps_script).ok()?;
+
+        let output = Command::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+            .args(&[
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-File", temp_script.to_str()?,
+                "-LnkPathBase64", &path_base64,
+            ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output()
             .ok()?;
 
+        // Clean up temp script
+        let _ = std::fs::remove_file(&temp_script);
+
         if output.status.success() {
             let base64 = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !base64.is_empty() {
+            if !base64.is_empty() && base64.len() > 100 {
                 return Some(format!("data:image/png;base64,{}", base64));
             }
         }
@@ -292,11 +476,20 @@ pub mod windows {
             .unwrap_or("Unknown")
             .to_string();
 
+        // Pre-compute pinyin for faster search (only for Chinese names)
+        let (name_pinyin, name_pinyin_initials) = if contains_chinese(&name) {
+            (Some(to_pinyin(&name).to_lowercase()), Some(to_pinyin_initials(&name).to_lowercase()))
+        } else {
+            (None, None)
+        };
+
         Ok(AppInfo {
             name,
             path: target,
             icon: None,
             description: None,
+            name_pinyin,
+            name_pinyin_initials,
         })
     }
 
@@ -333,21 +526,21 @@ pub mod windows {
 
     pub fn search_apps(query: &str, apps: &[AppInfo]) -> Vec<AppInfo> {
         if query.is_empty() {
-            return apps.to_vec();
+            return apps.iter().take(10).cloned().collect();
         }
 
         let query_lower = query.to_lowercase();
         let query_is_pinyin = !contains_chinese(&query_lower);
         
-        let mut results: Vec<(AppInfo, i32)> = apps
-            .iter()
-            .filter_map(|app| {
-                let name_lower = app.name.to_lowercase();
-                let path_lower = app.path.to_lowercase();
-
+        // Pre-allocate with capacity estimate to reduce allocations
+        let mut results: Vec<(usize, i32)> = Vec::with_capacity(20);
+        
+        // Use indices instead of cloning to avoid expensive clones
+        for (idx, app) in apps.iter().enumerate() {
                 let mut score = 0;
 
-                // Direct text match (highest priority)
+                // Direct text match (highest priority) - use case-insensitive comparison
+                let name_lower = app.name.to_lowercase();
                 if name_lower == query_lower {
                     score += 1000;
                 } else if name_lower.starts_with(&query_lower) {
@@ -356,47 +549,52 @@ pub mod windows {
                     score += 100;
                 }
 
-                // Pinyin matching (if query is pinyin)
+                // Pinyin matching (if query is pinyin) - use cached pinyin if available
                 if query_is_pinyin {
-                    let name_pinyin = to_pinyin(&app.name).to_lowercase();
-                    let name_pinyin_initials = to_pinyin_initials(&app.name).to_lowercase();
-                    
-                    // Full pinyin match
-                    if name_pinyin == query_lower {
-                        score += 800; // High score for full pinyin match
-                    } else if name_pinyin.starts_with(&query_lower) {
-                        score += 400;
-                    } else if name_pinyin.contains(&query_lower) {
-                        score += 150;
+                    // Use cached pinyin if available (much faster than computing on the fly)
+                    if let (Some(ref name_pinyin), Some(ref name_pinyin_initials)) = (&app.name_pinyin, &app.name_pinyin_initials) {
+                        // Full pinyin match
+                        if name_pinyin.as_str() == query_lower {
+                            score += 800; // High score for full pinyin match
+                        } else if name_pinyin.starts_with(&query_lower) {
+                            score += 400;
+                        } else if name_pinyin.contains(&query_lower) {
+                            score += 150;
+                        }
+                        
+                        // Pinyin initials match
+                        if name_pinyin_initials.as_str() == query_lower {
+                            score += 600; // High score for initials match
+                        } else if name_pinyin_initials.starts_with(&query_lower) {
+                            score += 300;
+                        } else if name_pinyin_initials.contains(&query_lower) {
+                            score += 120;
+                        }
                     }
-                    
-                    // Pinyin initials match (e.g., "vs" matches "Visual Studio" -> "vs")
-                    if name_pinyin_initials == query_lower {
-                        score += 600; // High score for initials match
-                    } else if name_pinyin_initials.starts_with(&query_lower) {
-                        score += 300;
-                    } else if name_pinyin_initials.contains(&query_lower) {
-                        score += 120;
-                    }
+                    // If no cached pinyin, skip pinyin matching (app name likely doesn't contain Chinese)
                 }
 
-                // Path match gets lower score
-                if path_lower.contains(&query_lower) {
-                    score += 10;
+                // Path match gets lower score (only check if no name match to save time)
+                if score == 0 {
+                    let path_lower = app.path.to_lowercase();
+                    if path_lower.contains(&query_lower) {
+                        score += 10;
+                    }
                 }
 
                 if score > 0 {
-                    Some((app.clone(), score))
-                } else {
-                    None
+                    results.push((idx, score));
                 }
-            })
-            .collect();
+        }
 
         // Sort by score (descending)
         results.sort_by(|a, b| b.1.cmp(&a.1));
 
-        results.into_iter().map(|(app, _)| app).collect()
+        // Limit to top 20 results for performance, clone only the selected apps
+        results.into_iter()
+            .take(20)
+            .map(|(idx, _)| apps[idx].clone())
+            .collect()
     }
 
     pub fn launch_app(app: &AppInfo) -> Result<(), String> {

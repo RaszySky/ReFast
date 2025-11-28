@@ -116,17 +116,23 @@ export function LauncherWindow() {
     };
   }, []);
 
-  // Search applications and file history when query changes
+  // Search applications and file history when query changes (with debounce)
   useEffect(() => {
     if (query.trim() === "") {
       setFilteredApps([]);
       setFilteredFiles([]);
       setResults([]);
       setSelectedIndex(0);
-    } else {
+      return;
+    }
+    
+    // Debounce search to avoid too many requests
+    const timeoutId = setTimeout(() => {
       searchApplications(query);
       searchFileHistory(query);
-    }
+    }, 500); // 500ms debounce
+    
+    return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 

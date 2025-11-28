@@ -448,30 +448,7 @@ pub fn scan_applications(app: tauri::AppHandle) -> Result<Vec<app_search::AppInf
     if let Ok(disk_cache) = app_search::windows::load_cache(&app_data_dir) {
         if !disk_cache.is_empty() {
             *cache_guard = Some(disk_cache.clone());
-            // Start background scan to update cache and extract icons
-            let app_handle = app.clone();
-            let cache_clone = cache.clone();
-            std::thread::spawn(move || {
-                if let Ok(mut apps) = app_search::windows::scan_start_menu() {
-                    // Extract icons in background (batch process)
-                    for app in apps.iter_mut() {
-                        if app.icon.is_none() {
-                            let path = std::path::Path::new(&app.path);
-                            if path.extension().and_then(|s| s.to_str()) == Some("lnk") {
-                                app.icon = app_search::windows::extract_lnk_icon_base64(path);
-                            } else if path.extension().and_then(|s| s.to_str()) == Some("exe") {
-                                app.icon = app_search::windows::extract_icon_base64(path);
-                            }
-                        }
-                    }
-                    let mut guard = cache_clone.lock().unwrap();
-                    *guard = Some(apps.clone());
-                    // Save to disk in background
-                    if let Ok(app_data_dir) = get_app_data_dir(&app_handle) {
-                        let _ = app_search::windows::save_cache(&app_data_dir, &apps);
-                    }
-                }
-            });
+            // Return cached apps immediately, no background scan
             return Ok(disk_cache);
         }
     }
@@ -482,38 +459,12 @@ pub fn scan_applications(app: tauri::AppHandle) -> Result<Vec<app_search::AppInf
     // Cache the results
     *cache_guard = Some(apps.clone());
     
-    // Extract icons and save to disk in background
-    let app_handle = app.clone();
-    let cache_clone = cache.clone();
-    let apps_clone = apps.clone();
-    std::thread::spawn(move || {
-        let mut apps_with_icons = apps_clone;
-        // Extract icons in background (batch process)
-        for app in apps_with_icons.iter_mut() {
-            if app.icon.is_none() {
-                let path = std::path::Path::new(&app.path);
-                if path.extension().and_then(|s| s.to_str()) == Some("lnk") {
-                    app.icon = app_search::windows::extract_lnk_icon_base64(path);
-                } else if path.extension().and_then(|s| s.to_str()) == Some("exe") {
-                    app.icon = app_search::windows::extract_icon_base64(path);
-                }
-            }
-        }
-        // Update cache with icons
-        if let Ok(mut guard) = cache_clone.lock() {
-            *guard = Some(apps_with_icons.clone());
-        }
-        // Save to disk
-        if let Ok(app_data_dir) = get_app_data_dir(&app_handle) {
-            let _ = app_search::windows::save_cache(&app_data_dir, &apps_with_icons);
-        }
-    });
-    
+    // No background icon extraction - icons will be extracted on-demand during search
     Ok(apps)
 }
 
 #[tauri::command]
-pub fn search_applications(query: String) -> Result<Vec<app_search::AppInfo>, String> {
+pub fn search_applications(query: String, app: tauri::AppHandle) -> Result<Vec<app_search::AppInfo>, String> {
     let cache = APP_CACHE.clone();
     let cache_guard = cache.lock().map_err(|e| e.to_string())?;
     
@@ -521,6 +472,55 @@ pub fn search_applications(query: String) -> Result<Vec<app_search::AppInfo>, St
         .ok_or_else(|| "Applications not scanned yet. Call scan_applications first.".to_string())?;
     
     let results = app_search::windows::search_apps(&query, apps);
+    
+    // Icons are extracted asynchronously in background - don't block search
+    // This prevents UI freezing when PowerShell commands take time
+    
+    // Extract icons for top results asynchronously in background (non-blocking)
+    let cache_clone = cache.clone();
+    let app_handle_clone = app.clone();
+    let results_paths: Vec<String> = results.iter()
+        .take(5)
+        .filter(|r| r.icon.is_none())
+        .map(|r| r.path.clone())
+        .collect();
+    std::thread::spawn(move || {
+        let mut updated = false;
+        
+        // Get current cache
+        if let Ok(mut guard) = cache_clone.lock() {
+            if let Some(ref mut apps) = *guard {
+                // Update icons for remaining search results
+                for path_str in results_paths {
+                    let path = std::path::Path::new(&path_str);
+                    let ext = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase());
+                    let icon = if ext == Some("lnk".to_string()) {
+                        app_search::windows::extract_lnk_icon_base64(path)
+                    } else if ext == Some("exe".to_string()) {
+                        app_search::windows::extract_icon_base64(path)
+                    } else {
+                        None
+                    };
+                    
+                    if let Some(icon) = icon {
+                        // Update in cache
+                        if let Some(app) = apps.iter_mut().find(|a| a.path == path_str) {
+                            app.icon = Some(icon);
+                            updated = true;
+                        }
+                    }
+                }
+                
+                // Save to disk if updated
+                if updated {
+                    if let Ok(app_data_dir) = get_app_data_dir(&app_handle_clone) {
+                        let _ = app_search::windows::save_cache(&app_data_dir, apps);
+                    }
+                }
+            }
+        }
+    });
+    
     Ok(results)
 }
 
