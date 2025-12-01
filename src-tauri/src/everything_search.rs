@@ -978,23 +978,32 @@ pub mod windows {
                 } else if filename.is_empty() {
                     path_part.clone()
                 } else {
+                    // 处理 Windows 驱动器号的情况（如 "D:" 需要变成 "D:\"）
+                    let normalized_path = if path_part.len() == 2 && path_part.ends_with(':') {
+                        format!("{}\\", path_part)
+                    } else if !path_part.ends_with('\\') && !path_part.ends_with('/') {
+                        format!("{}\\", path_part)
+                    } else {
+                        path_part.clone()
+                    };
+                    
                     // 使用 PathBuf 来正确拼接路径
-                    let path_buf = PathBuf::from(&path_part);
+                    let path_buf = PathBuf::from(&normalized_path);
                     if let Some(joined) = path_buf.join(&filename).to_str() {
                         joined.to_string()
                     } else {
                         // 如果路径包含无效字符，使用简单拼接
-                        format!("{}\\{}", path_part, filename)
+                        format!("{}{}", normalized_path, filename)
                     }
                 };
 
                 // 只有当文件名或路径至少有一个有效时才添加结果
                 if !filename.is_empty() || !path_part.is_empty() {
-                    // 性能优化：减少日志输出
-                    // if i < 3 {
-                    //     log_debug!("[DEBUG] Item {}: path_part='{}', filename='{}', full_path='{}'",
-                    //         i, path_part, filename, full_path);
-                    // }
+                    // 对于前几个 item，输出详细日志用于调试路径问题
+                    if i < 5 {
+                        log_debug!("[DEBUG] Item {}: path_part='{}', filename='{}', full_path='{}'",
+                            i, path_part, filename, full_path);
+                    }
                     results.push(full_path);
                 } else {
                     skipped_count += 1;
