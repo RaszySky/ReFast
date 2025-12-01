@@ -18,9 +18,9 @@ pub struct AppInfo {
 #[cfg(target_os = "windows")]
 pub mod windows {
     use super::*;
-    use std::env;
-    use pinyin::ToPinyin;
     use base64::Engine;
+    use pinyin::ToPinyin;
+    use std::env;
 
     // Cache file name
     pub fn get_cache_file_path(app_data_dir: &Path) -> PathBuf {
@@ -30,7 +30,7 @@ pub mod windows {
     // Load cached apps from disk
     pub fn load_cache(app_data_dir: &Path) -> Result<Vec<AppInfo>, String> {
         let cache_file = get_cache_file_path(app_data_dir);
-        
+
         if !cache_file.exists() {
             return Ok(Vec::new());
         }
@@ -55,7 +55,7 @@ pub mod windows {
         let cache_file = get_cache_file_path(app_data_dir);
         let json_string = serde_json::to_string_pretty(apps)
             .map_err(|e| format!("Failed to serialize cache: {}", e))?;
-        
+
         fs::write(&cache_file, json_string)
             .map_err(|e| format!("Failed to write cache file: {}", e))?;
 
@@ -98,7 +98,7 @@ pub mod windows {
         if depth > MAX_DEPTH {
             return Ok(());
         }
-        
+
         // Limit total number of apps to avoid memory issues (increased to 2000)
         const MAX_APPS: usize = 2000;
         if apps.len() >= MAX_APPS {
@@ -114,7 +114,7 @@ pub mod windows {
             if apps.len() >= MAX_APPS {
                 break;
             }
-            
+
             let entry = match entry {
                 Ok(e) => e,
                 Err(_) => continue, // Skip entries we can't read
@@ -126,14 +126,22 @@ pub mod windows {
                 if let Err(_) = scan_directory(&path, apps, depth + 1) {
                     // Continue on error
                 }
-            } else if path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) == Some("lnk".to_string()) {
+            } else if path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_lowercase())
+                == Some("lnk".to_string())
+            {
                 // Fast path: use .lnk filename directly without parsing
                 // Don't extract icon during scan to keep it fast - extract in background later
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                     let name_str = name.to_string();
                     // Pre-compute pinyin for faster search (only for Chinese names)
                     let (name_pinyin, name_pinyin_initials) = if contains_chinese(&name_str) {
-                        (Some(to_pinyin(&name_str).to_lowercase()), Some(to_pinyin_initials(&name_str).to_lowercase()))
+                        (
+                            Some(to_pinyin(&name_str).to_lowercase()),
+                            Some(to_pinyin_initials(&name_str).to_lowercase()),
+                        )
                     } else {
                         (None, None)
                     };
@@ -146,13 +154,21 @@ pub mod windows {
                         name_pinyin_initials,
                     });
                 }
-            } else if path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) == Some("exe".to_string()) {
+            } else if path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_lowercase())
+                == Some("exe".to_string())
+            {
                 // Direct executable - don't extract icon during scan to keep it fast
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                     let name_str = name.to_string();
                     // Pre-compute pinyin for faster search (only for Chinese names)
                     let (name_pinyin, name_pinyin_initials) = if contains_chinese(&name_str) {
-                        (Some(to_pinyin(&name_str).to_lowercase()), Some(to_pinyin_initials(&name_str).to_lowercase()))
+                        (
+                            Some(to_pinyin(&name_str).to_lowercase()),
+                            Some(to_pinyin_initials(&name_str).to_lowercase()),
+                        )
                     } else {
                         (None, None)
                     };
@@ -177,7 +193,10 @@ pub mod windows {
         // Convert path to UTF-16 bytes for PowerShell parameter
         let path_utf16: Vec<u16> = file_path.to_string_lossy().encode_utf16().collect();
         let path_base64 = base64::engine::general_purpose::STANDARD.encode(
-            path_utf16.iter().flat_map(|&u| u.to_le_bytes()).collect::<Vec<u8>>()
+            path_utf16
+                .iter()
+                .flat_map(|&u| u.to_le_bytes())
+                .collect::<Vec<u8>>(),
         );
 
         // PowerShell script that decodes UTF-16 path and extracts icon using WMI
@@ -227,15 +246,19 @@ try {
 "#;
 
         // Write script to temp file to avoid command-line length limits
-        let temp_script = std::env::temp_dir().join(format!("icon_extract_{}.ps1", std::process::id()));
+        let temp_script =
+            std::env::temp_dir().join(format!("icon_extract_{}.ps1", std::process::id()));
         std::fs::write(&temp_script, ps_script).ok()?;
 
         let output = Command::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
             .args(&[
                 "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-File", temp_script.to_str()?,
-                "-PathBase64", &path_base64,
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                temp_script.to_str()?,
+                "-PathBase64",
+                &path_base64,
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -261,7 +284,10 @@ try {
         // Convert path to UTF-16 bytes for PowerShell parameter
         let path_utf16: Vec<u16> = lnk_path.to_string_lossy().encode_utf16().collect();
         let path_base64 = base64::engine::general_purpose::STANDARD.encode(
-            path_utf16.iter().flat_map(|&u| u.to_le_bytes()).collect::<Vec<u8>>()
+            path_utf16
+                .iter()
+                .flat_map(|&u| u.to_le_bytes())
+                .collect::<Vec<u8>>(),
         );
 
         // PowerShell script that decodes UTF-16 path and extracts icon from .lnk
@@ -395,15 +421,19 @@ public class IconExtractor {
 "#;
 
         // Write script to temp file
-        let temp_script = std::env::temp_dir().join(format!("lnk_icon_extract_{}.ps1", std::process::id()));
+        let temp_script =
+            std::env::temp_dir().join(format!("lnk_icon_extract_{}.ps1", std::process::id()));
         std::fs::write(&temp_script, ps_script).ok()?;
 
         let output = Command::new("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
             .args(&[
                 "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-File", temp_script.to_str()?,
-                "-LnkPathBase64", &path_base64,
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                temp_script.to_str()?,
+                "-LnkPathBase64",
+                &path_base64,
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -432,7 +462,13 @@ public class IconExtractor {
 
         // Add timeout to PowerShell command to avoid hanging
         let output = Command::new("powershell")
-            .args(&["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+            .args(&[
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &ps_command,
+            ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output()
@@ -445,9 +481,7 @@ public class IconExtractor {
             ));
         }
 
-        let target_path = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let target_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if target_path.is_empty() {
             return Err("Empty target path".to_string());
@@ -478,7 +512,10 @@ public class IconExtractor {
 
         // Pre-compute pinyin for faster search (only for Chinese names)
         let (name_pinyin, name_pinyin_initials) = if contains_chinese(&name) {
-            (Some(to_pinyin(&name).to_lowercase()), Some(to_pinyin_initials(&name).to_lowercase()))
+            (
+                Some(to_pinyin(&name).to_lowercase()),
+                Some(to_pinyin_initials(&name).to_lowercase()),
+            )
         } else {
             (None, None)
         };
@@ -531,67 +568,70 @@ public class IconExtractor {
 
         let query_lower = query.to_lowercase();
         let query_is_pinyin = !contains_chinese(&query_lower);
-        
+
         // Pre-allocate with capacity estimate to reduce allocations
         let mut results: Vec<(usize, i32)> = Vec::with_capacity(20);
-        
+
         // Use indices instead of cloning to avoid expensive clones
         for (idx, app) in apps.iter().enumerate() {
-                let mut score = 0;
+            let mut score = 0;
 
-                // Direct text match (highest priority) - use case-insensitive comparison
-                let name_lower = app.name.to_lowercase();
-                if name_lower == query_lower {
-                    score += 1000;
-                } else if name_lower.starts_with(&query_lower) {
-                    score += 500;
-                } else if name_lower.contains(&query_lower) {
-                    score += 100;
-                }
+            // Direct text match (highest priority) - use case-insensitive comparison
+            let name_lower = app.name.to_lowercase();
+            if name_lower == query_lower {
+                score += 1000;
+            } else if name_lower.starts_with(&query_lower) {
+                score += 500;
+            } else if name_lower.contains(&query_lower) {
+                score += 100;
+            }
 
-                // Pinyin matching (if query is pinyin) - use cached pinyin if available
-                if query_is_pinyin {
-                    // Use cached pinyin if available (much faster than computing on the fly)
-                    if let (Some(ref name_pinyin), Some(ref name_pinyin_initials)) = (&app.name_pinyin, &app.name_pinyin_initials) {
-                        // Full pinyin match
-                        if name_pinyin.as_str() == query_lower {
-                            score += 800; // High score for full pinyin match
-                        } else if name_pinyin.starts_with(&query_lower) {
-                            score += 400;
-                        } else if name_pinyin.contains(&query_lower) {
-                            score += 150;
-                        }
-                        
-                        // Pinyin initials match
-                        if name_pinyin_initials.as_str() == query_lower {
-                            score += 600; // High score for initials match
-                        } else if name_pinyin_initials.starts_with(&query_lower) {
-                            score += 300;
-                        } else if name_pinyin_initials.contains(&query_lower) {
-                            score += 120;
-                        }
+            // Pinyin matching (if query is pinyin) - use cached pinyin if available
+            if query_is_pinyin {
+                // Use cached pinyin if available (much faster than computing on the fly)
+                if let (Some(ref name_pinyin), Some(ref name_pinyin_initials)) =
+                    (&app.name_pinyin, &app.name_pinyin_initials)
+                {
+                    // Full pinyin match
+                    if name_pinyin.as_str() == query_lower {
+                        score += 800; // High score for full pinyin match
+                    } else if name_pinyin.starts_with(&query_lower) {
+                        score += 400;
+                    } else if name_pinyin.contains(&query_lower) {
+                        score += 150;
                     }
-                    // If no cached pinyin, skip pinyin matching (app name likely doesn't contain Chinese)
-                }
 
-                // Path match gets lower score (only check if no name match to save time)
-                if score == 0 {
-                    let path_lower = app.path.to_lowercase();
-                    if path_lower.contains(&query_lower) {
-                        score += 10;
+                    // Pinyin initials match
+                    if name_pinyin_initials.as_str() == query_lower {
+                        score += 600; // High score for initials match
+                    } else if name_pinyin_initials.starts_with(&query_lower) {
+                        score += 300;
+                    } else if name_pinyin_initials.contains(&query_lower) {
+                        score += 120;
                     }
                 }
+                // If no cached pinyin, skip pinyin matching (app name likely doesn't contain Chinese)
+            }
 
-                if score > 0 {
-                    results.push((idx, score));
+            // Path match gets lower score (only check if no name match to save time)
+            if score == 0 {
+                let path_lower = app.path.to_lowercase();
+                if path_lower.contains(&query_lower) {
+                    score += 10;
                 }
+            }
+
+            if score > 0 {
+                results.push((idx, score));
+            }
         }
 
         // Sort by score (descending)
         results.sort_by(|a, b| b.1.cmp(&a.1));
 
         // Limit to top 20 results for performance, clone only the selected apps
-        results.into_iter()
+        results
+            .into_iter()
             .take(20)
             .map(|(idx, _)| apps[idx].clone())
             .collect()
@@ -599,7 +639,7 @@ public class IconExtractor {
 
     pub fn launch_app(app: &AppInfo) -> Result<(), String> {
         let path = Path::new(&app.path);
-        
+
         // If it's a .lnk file, use Windows shell to open it
         if path.extension().and_then(|s| s.to_str()) == Some("lnk") {
             #[cfg(target_os = "windows")]
@@ -614,7 +654,7 @@ public class IconExtractor {
                 return Ok(());
             }
         }
-        
+
         if !path.exists() {
             return Err(format!("Application not found: {}", app.path));
         }
@@ -644,4 +684,3 @@ pub mod windows {
         Err("App launch is only supported on Windows".to_string())
     }
 }
-

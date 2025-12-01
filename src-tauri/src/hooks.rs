@@ -4,15 +4,16 @@ pub mod windows {
     use std::sync::{Arc, Mutex};
     use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetCursorPos, KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, SetWindowsHookExA,
-        UnhookWindowsHookEx, HHOOK, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
+        CallNextHookEx, GetCursorPos, SetWindowsHookExA, UnhookWindowsHookEx, HHOOK,
+        KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
         WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
         WM_RBUTTONDOWN, WM_RBUTTONUP,
     };
 
     static MOUSE_HOOK: std::sync::Mutex<Option<HHOOK>> = std::sync::Mutex::new(None);
     static KEYBOARD_HOOK: std::sync::Mutex<Option<HHOOK>> = std::sync::Mutex::new(None);
-    static RECORDING_STATE: std::sync::OnceLock<Arc<Mutex<crate::recording::RecordingState>>> = std::sync::OnceLock::new();
+    static RECORDING_STATE: std::sync::OnceLock<Arc<Mutex<crate::recording::RecordingState>>> =
+        std::sync::OnceLock::new();
 
     unsafe extern "system" fn mouse_hook_proc(
         n_code: i32,
@@ -133,7 +134,9 @@ pub mod windows {
         CallNextHookEx(hook, n_code, w_param, l_param)
     }
 
-    pub fn install_hooks(state: Arc<Mutex<crate::recording::RecordingState>>) -> Result<(), String> {
+    pub fn install_hooks(
+        state: Arc<Mutex<crate::recording::RecordingState>>,
+    ) -> Result<(), String> {
         // Set the recording state if not already set
         RECORDING_STATE.set(state).ok();
 
@@ -154,7 +157,9 @@ pub mod windows {
             }
 
             // Store the hook handle
-            *MOUSE_HOOK.lock().map_err(|e| format!("Failed to lock mouse hook: {}", e))? = Some(mouse_hook);
+            *MOUSE_HOOK
+                .lock()
+                .map_err(|e| format!("Failed to lock mouse hook: {}", e))? = Some(mouse_hook);
 
             let keyboard_hook = SetWindowsHookExA(
                 WH_KEYBOARD_LL,
@@ -170,7 +175,9 @@ pub mod windows {
             }
 
             // Store the hook handle
-            *KEYBOARD_HOOK.lock().map_err(|e| format!("Failed to lock keyboard hook: {}", e))? = Some(keyboard_hook);
+            *KEYBOARD_HOOK
+                .lock()
+                .map_err(|e| format!("Failed to lock keyboard hook: {}", e))? = Some(keyboard_hook);
         }
 
         Ok(())
@@ -204,7 +211,9 @@ pub mod windows {
     use crate::recording::RecordingState;
     use std::sync::{Arc, Mutex};
 
-    pub fn install_hooks(_state: Arc<Mutex<crate::recording::RecordingState>>) -> Result<(), String> {
+    pub fn install_hooks(
+        _state: Arc<Mutex<crate::recording::RecordingState>>,
+    ) -> Result<(), String> {
         Err("Hooks are only supported on Windows".to_string())
     }
 
@@ -212,4 +221,3 @@ pub mod windows {
         Err("Hooks are only supported on Windows".to_string())
     }
 }
-

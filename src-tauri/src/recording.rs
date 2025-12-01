@@ -59,7 +59,8 @@ impl RecordingState {
     }
 
     pub fn get_time_offset_ms(&self) -> Option<u64> {
-        self.start_instant.map(|start| start.elapsed().as_millis() as u64)
+        self.start_instant
+            .map(|start| start.elapsed().as_millis() as u64)
     }
 }
 
@@ -77,4 +78,3 @@ pub struct RecordingMeta {
     pub event_count: usize,
     pub created_at: String,
 }
-

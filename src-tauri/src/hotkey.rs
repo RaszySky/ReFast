@@ -1,25 +1,22 @@
 #[cfg(target_os = "windows")]
 pub mod windows {
     use std::sync::atomic::{AtomicBool, Ordering};
-    use windows_sys::Win32::{
-        Foundation::HWND,
-        UI::WindowsAndMessaging::WM_HOTKEY,
-    };
-    
+    use windows_sys::Win32::{Foundation::HWND, UI::WindowsAndMessaging::WM_HOTKEY};
+
     // These functions are in user32.dll but not exposed in windows-sys
     // We'll use a different approach or define them manually
     extern "system" {
         fn RegisterHotKey(hWnd: HWND, id: i32, fsModifiers: u32, vk: u32) -> i32;
         fn UnregisterHotKey(hWnd: HWND, id: i32) -> i32;
     }
-    
+
     const MOD_ALT: u32 = 0x0001;
 
     static HOTKEY_REGISTERED: AtomicBool = AtomicBool::new(false);
-    
+
     // Hotkey ID for Alt+Space
     const HOTKEY_ID_ALT_SPACE: i32 = 1;
-    
+
     // Virtual key code for Space
     const VK_SPACE: u32 = 0x20;
 
@@ -30,12 +27,7 @@ pub mod windows {
 
         unsafe {
             // Register Alt+Space hotkey
-            let result = RegisterHotKey(
-                hwnd,
-                HOTKEY_ID_ALT_SPACE,
-                MOD_ALT,
-                VK_SPACE,
-            );
+            let result = RegisterHotKey(hwnd, HOTKEY_ID_ALT_SPACE, MOD_ALT, VK_SPACE);
 
             if result == 0 {
                 return Err("Failed to register Alt+Space hotkey".to_string());
@@ -83,4 +75,3 @@ pub mod windows {
         false
     }
 }
-

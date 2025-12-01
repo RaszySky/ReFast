@@ -13,33 +13,31 @@ mod recording;
 mod replay;
 mod shortcuts;
 
-use commands::*;
 use crate::commands::get_app_data_dir;
-use tauri::{Manager, menu::{Menu, MenuItem}};
+use commands::*;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{
+    menu::{Menu, MenuItem},
+    Manager,
+};
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Create system tray menu
-            let show_launcher = MenuItem::with_id(app, "show_launcher", "显示启动器", true, None::<&str>)?;
+            let show_launcher =
+                MenuItem::with_id(app, "show_launcher", "显示启动器", true, None::<&str>)?;
             let show_main = MenuItem::with_id(app, "show_main", "显示主窗口", true, None::<&str>)?;
             let restart = MenuItem::with_id(app, "restart", "重启程序", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            
-            let menu = Menu::with_items(app, &[
-                &show_launcher,
-                &show_main,
-                &restart,
-                &quit,
-            ])?;
+
+            let menu = Menu::with_items(app, &[&show_launcher, &show_main, &restart, &quit])?;
 
             // Create tray icon - use default window icon (which loads from tauri.conf.json)
-            let mut tray_builder = TrayIconBuilder::new()
-                .menu(&menu)
-                .tooltip("ReFast");
-            
+            let mut tray_builder = TrayIconBuilder::new().menu(&menu).tooltip("ReFast");
+
             // Use default window icon (loaded from tauri.conf.json icons/icon.ico)
             // This is the simplest and most reliable way to load the icon
             if let Some(default_icon) = app.default_window_icon() {
@@ -56,7 +54,7 @@ fn main() {
                 let fallback_icon = Image::new_owned(rgba, 16, 16);
                 tray_builder = tray_builder.icon(fallback_icon);
             }
-            
+
             let _tray = tray_builder
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -78,28 +76,26 @@ fn main() {
                         }
                     }
                 })
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "show_launcher" => {
-                            if let Some(window) = app.get_webview_window("launcher") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show_launcher" => {
+                        if let Some(window) = app.get_webview_window("launcher") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        "show_main" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        "restart" => {
-                            app.restart();
-                        }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
                     }
+                    "show_main" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "restart" => {
+                        app.restart();
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -107,16 +103,16 @@ fn main() {
             if let Some(window) = app.get_webview_window("launcher") {
                 let _ = window.set_decorations(false);
             }
-            
+
             // Register global hotkey for launcher window
             #[cfg(target_os = "windows")]
             {
                 use std::sync::mpsc;
                 use std::time::Duration;
-                
+
                 let app_handle = app.handle().clone();
                 let (tx, rx) = mpsc::channel();
-                
+
                 // Start hotkey listener thread in background
                 match hotkey_handler::windows::start_hotkey_listener(tx) {
                     Ok(_handle) => {
@@ -127,8 +123,10 @@ fn main() {
                                 // Hotkey pressed - toggle launcher window
                                 // Small delay to ensure window operations are ready
                                 std::thread::sleep(Duration::from_millis(50));
-                                
-                                if let Some(window) = app_handle_clone.get_webview_window("launcher") {
+
+                                if let Some(window) =
+                                    app_handle_clone.get_webview_window("launcher")
+                                {
                                     let _ = window.is_visible().map(|visible| {
                                         if visible {
                                             let _ = window.hide();
@@ -151,7 +149,7 @@ fn main() {
             let app_data_dir = get_app_data_dir(app.handle())?;
             file_history::load_history(&app_data_dir).ok(); // Ignore errors if file doesn't exist
             shortcuts::load_shortcuts(&app_data_dir).ok(); // Ignore errors if file doesn't exist
-            
+
             // Initialize Everything log file on startup to ensure path is displayed
             #[cfg(target_os = "windows")]
             {
@@ -208,6 +206,7 @@ fn main() {
             launch_file,
             check_path_exists,
             get_clipboard_file_path,
+            reveal_in_folder,
             get_all_shortcuts,
             add_shortcut,
             update_shortcut,
@@ -221,4 +220,3 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

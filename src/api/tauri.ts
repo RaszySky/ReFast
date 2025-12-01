@@ -162,5 +162,9 @@ export const tauriApi = {
   async openUrl(url: string): Promise<void> {
     return invoke("open_url", { url });
   },
+
+  async revealInFolder(path: string): Promise<void> {
+    return invoke("reveal_in_folder", { path });
+  },
 };
 

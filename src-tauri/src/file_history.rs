@@ -1,11 +1,11 @@
+#[cfg(target_os = "windows")]
+use pinyin::ToPinyin;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(target_os = "windows")]
-use pinyin::{ToPinyin};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FileHistoryItem {
@@ -23,23 +23,37 @@ pub fn get_history_file_path(app_data_dir: &Path) -> PathBuf {
 }
 
 // Load history into an already-locked state (no additional locking)
-pub fn load_history_into(state: &mut HashMap<String, FileHistoryItem>, app_data_dir: &Path) -> Result<(), String> {
+pub fn load_history_into(
+    state: &mut HashMap<String, FileHistoryItem>,
+    app_data_dir: &Path,
+) -> Result<(), String> {
     let history_file = get_history_file_path(app_data_dir);
-    println!("[后端] file_history.load_history_into: Loading from {:?}", history_file);
-    
+    println!(
+        "[后端] file_history.load_history_into: Loading from {:?}",
+        history_file
+    );
+
     if !history_file.exists() {
-        println!("[后端] file_history.load_history_into: History file does not exist, starting fresh");
+        println!(
+            "[后端] file_history.load_history_into: History file does not exist, starting fresh"
+        );
         return Ok(()); // No history file, start fresh
     }
 
     println!("[后端] file_history.load_history_into: Reading file...");
     let content = match fs::read_to_string(&history_file) {
         Ok(c) => {
-            println!("[后端] file_history.load_history_into: File read successfully, {} bytes", c.len());
+            println!(
+                "[后端] file_history.load_history_into: File read successfully, {} bytes",
+                c.len()
+            );
             c
         }
         Err(e) => {
-            println!("[后端] file_history.load_history_into: ERROR reading file: {}", e);
+            println!(
+                "[后端] file_history.load_history_into: ERROR reading file: {}",
+                e
+            );
             return Err(format!("Failed to read history file: {}", e));
         }
     };
@@ -47,11 +61,17 @@ pub fn load_history_into(state: &mut HashMap<String, FileHistoryItem>, app_data_
     println!("[后端] file_history.load_history_into: Parsing JSON...");
     let history = match serde_json::from_str::<HashMap<String, FileHistoryItem>>(&content) {
         Ok(h) => {
-            println!("[后端] file_history.load_history_into: JSON parsed successfully, {} items", h.len());
+            println!(
+                "[后端] file_history.load_history_into: JSON parsed successfully, {} items",
+                h.len()
+            );
             h
         }
         Err(e) => {
-            println!("[后端] file_history.load_history_into: ERROR parsing JSON: {}", e);
+            println!(
+                "[后端] file_history.load_history_into: ERROR parsing JSON: {}",
+                e
+            );
             return Err(format!("Failed to parse history file: {}", e));
         }
     };
@@ -69,7 +89,10 @@ pub fn load_history(app_data_dir: &Path) -> Result<(), String> {
 }
 
 // Save history from a provided state (no locking)
-fn save_history_internal(state: &HashMap<String, FileHistoryItem>, app_data_dir: &Path) -> Result<(), String> {
+fn save_history_internal(
+    state: &HashMap<String, FileHistoryItem>,
+    app_data_dir: &Path,
+) -> Result<(), String> {
     // Create directory if it doesn't exist
     if !app_data_dir.exists() {
         fs::create_dir_all(app_data_dir)
@@ -77,7 +100,7 @@ fn save_history_internal(state: &HashMap<String, FileHistoryItem>, app_data_dir:
     }
 
     let history_file = get_history_file_path(app_data_dir);
-    
+
     let history_json = serde_json::to_string_pretty(state)
         .map_err(|e| format!("Failed to serialize history: {}", e))?;
 
@@ -97,7 +120,7 @@ pub fn add_file_path(path: String, app_data_dir: &Path) -> Result<(), String> {
     // Normalize path: trim whitespace and remove trailing backslashes/slashes
     let trimmed = path.trim();
     let trimmed = trimmed.trim_end_matches(|c| c == '\\' || c == '/');
-    
+
     // Normalize path (convert to absolute if relative)
     let path_buf = PathBuf::from(trimmed);
     let normalized_path = if path_buf.is_absolute() {
@@ -146,7 +169,7 @@ pub fn add_file_path(path: String, app_data_dir: &Path) -> Result<(), String> {
     }
 
     drop(state);
-    
+
     // Save to disk
     save_history(app_data_dir)?;
 
@@ -188,7 +211,8 @@ fn contains_chinese(text: &str) -> bool {
 }
 
 // Get a lock guard - caller must ensure no nested locking
-pub fn lock_history() -> Result<std::sync::MutexGuard<'static, HashMap<String, FileHistoryItem>>, String> {
+pub fn lock_history(
+) -> Result<std::sync::MutexGuard<'static, HashMap<String, FileHistoryItem>>, String> {
     println!("[后端] file_history.lock_history: Attempting to acquire lock...");
     match FILE_HISTORY.lock() {
         Ok(guard) => {
@@ -196,14 +220,20 @@ pub fn lock_history() -> Result<std::sync::MutexGuard<'static, HashMap<String, F
             Ok(guard)
         }
         Err(e) => {
-            println!("[后端] file_history.lock_history: ERROR acquiring lock: {}", e);
+            println!(
+                "[后端] file_history.lock_history: ERROR acquiring lock: {}",
+                e
+            );
             Err(e.to_string())
         }
     }
 }
 
 // Search within already-locked history (no additional locking)
-pub fn search_in_history(state: &HashMap<String, FileHistoryItem>, query: &str) -> Vec<FileHistoryItem> {
+pub fn search_in_history(
+    state: &HashMap<String, FileHistoryItem>,
+    query: &str,
+) -> Vec<FileHistoryItem> {
     if query.is_empty() {
         // Return all items sorted by last_used (most recent first)
         let mut items: Vec<FileHistoryItem> = state.values().cloned().collect();
@@ -214,7 +244,7 @@ pub fn search_in_history(state: &HashMap<String, FileHistoryItem>, query: &str) 
     let query_lower = query.to_lowercase();
     #[cfg(target_os = "windows")]
     let query_is_pinyin = !contains_chinese(&query_lower);
-    
+
     let mut results: Vec<(FileHistoryItem, i32)> = state
         .values()
         .filter_map(|item| {
@@ -237,7 +267,7 @@ pub fn search_in_history(state: &HashMap<String, FileHistoryItem>, query: &str) 
             if query_is_pinyin {
                 let name_pinyin = to_pinyin(&item.name).to_lowercase();
                 let name_pinyin_initials = to_pinyin_initials(&item.name).to_lowercase();
-                
+
                 // Full pinyin match
                 if name_pinyin == query_lower {
                     score += 800;
@@ -246,7 +276,7 @@ pub fn search_in_history(state: &HashMap<String, FileHistoryItem>, query: &str) 
                 } else if name_pinyin.contains(&query_lower) {
                     score += 150;
                 }
-                
+
                 // Pinyin initials match
                 if name_pinyin_initials == query_lower {
                     score += 600;
@@ -287,43 +317,49 @@ pub fn search_file_history(query: &str) -> Vec<FileHistoryItem> {
 pub fn delete_file_history(path: String, app_data_dir: &Path) -> Result<(), String> {
     // Lock once, do all operations
     let mut state = lock_history()?;
-    
-    state.remove(&path)
+
+    state
+        .remove(&path)
         .ok_or_else(|| format!("File history item not found: {}", path))?;
-    
+
     // Clone the state for saving (we need to release the lock first)
     let state_clone = state.clone();
     drop(state); // Release lock before calling save_history_internal
-    
+
     // Save to disk (save_history_internal doesn't lock)
     save_history_internal(&state_clone, app_data_dir)?;
-    
+
     Ok(())
 }
 
-pub fn update_file_history_name(path: String, new_name: String, app_data_dir: &Path) -> Result<FileHistoryItem, String> {
+pub fn update_file_history_name(
+    path: String,
+    new_name: String,
+    app_data_dir: &Path,
+) -> Result<FileHistoryItem, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
-    
+
     // Lock once, do all operations
     let mut state = lock_history()?;
-    
-    let item = state.get_mut(&path)
+
+    let item = state
+        .get_mut(&path)
         .ok_or_else(|| format!("File history item not found: {}", path))?;
-    
+
     item.name = new_name;
     item.last_used = timestamp;
-    
+
     let item_clone = item.clone();
     let state_clone = state.clone();
     drop(state); // Release lock before calling save
-    
+
     save_history_internal(&state_clone, app_data_dir)?;
-    
+
     Ok(item_clone)
 }
 
@@ -333,9 +369,9 @@ pub fn launch_file(path: &str) -> Result<(), String> {
     // Normalize path: trim whitespace and remove trailing backslashes/slashes
     let trimmed = path.trim();
     let trimmed = trimmed.trim_end_matches(|c| c == '\\' || c == '/');
-    
+
     let path_buf = PathBuf::from(trimmed);
-    
+
     if !path_buf.exists() {
         return Err(format!("Path not found: {}", trimmed));
     }

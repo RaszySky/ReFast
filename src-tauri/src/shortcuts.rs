@@ -10,8 +10,8 @@ pub struct ShortcutItem {
     pub name: String,
     pub path: String,
     pub icon: Option<String>, // Optional icon path or base64 data
-    pub created_at: u64, // Unix timestamp
-    pub updated_at: u64, // Unix timestamp
+    pub created_at: u64,      // Unix timestamp
+    pub updated_at: u64,      // Unix timestamp
 }
 
 static SHORTCUTS: LazyLock<Arc<Mutex<HashMap<String, ShortcutItem>>>> =
@@ -23,7 +23,7 @@ pub fn get_shortcuts_file_path(app_data_dir: &Path) -> PathBuf {
 
 pub fn load_shortcuts(app_data_dir: &Path) -> Result<(), String> {
     let shortcuts_file = get_shortcuts_file_path(app_data_dir);
-    
+
     if !shortcuts_file.exists() {
         return Ok(()); // No shortcuts file, start fresh
     }
@@ -48,7 +48,7 @@ pub fn save_shortcuts(app_data_dir: &Path) -> Result<(), String> {
     }
 
     let shortcuts_file = get_shortcuts_file_path(app_data_dir);
-    
+
     let state = SHORTCUTS.lock().map_err(|e| e.to_string())?;
     let shortcuts_json = serde_json::to_string_pretty(&*state)
         .map_err(|e| format!("Failed to serialize shortcuts: {}", e))?;
@@ -71,7 +71,7 @@ pub fn add_shortcut(
     app_data_dir: &Path,
 ) -> Result<ShortcutItem, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
@@ -106,15 +106,16 @@ pub fn update_shortcut(
     app_data_dir: &Path,
 ) -> Result<ShortcutItem, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
     let mut state = SHORTCUTS.lock().map_err(|e| e.to_string())?;
-    
-    let shortcut = state.get_mut(&id)
+
+    let shortcut = state
+        .get_mut(&id)
         .ok_or_else(|| format!("Shortcut not found: {}", id))?;
 
     if let Some(name) = name {
@@ -138,14 +139,14 @@ pub fn update_shortcut(
 
 pub fn delete_shortcut(id: String, app_data_dir: &Path) -> Result<(), String> {
     let mut state = SHORTCUTS.lock().map_err(|e| e.to_string())?;
-    
-    state.remove(&id)
+
+    state
+        .remove(&id)
         .ok_or_else(|| format!("Shortcut not found: {}", id))?;
-    
+
     drop(state);
 
     save_shortcuts(app_data_dir)?;
 
     Ok(())
 }
-

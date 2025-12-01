@@ -21,12 +21,13 @@ impl ReplayState {
     }
 
     pub fn load_recording<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
-        let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
-        
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+
         // Parse JSON - the file contains {events: [...], duration_ms: ..., created_at: ...}
-        let json: serde_json::Value = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
-        
+        let json: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
         // Extract events array
         self.current_events = json["events"]
             .as_array()
@@ -35,7 +36,7 @@ impl ReplayState {
             .map(|v| serde_json::from_value(v.clone()))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Failed to parse events: {}", e))?;
-        
+
         self.current_index = 0;
         Ok(())
     }
@@ -73,9 +74,9 @@ impl ReplayState {
         {
             use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
                 SendInput, INPUT, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
-                MOUSEINPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
+                MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
                 MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
-                MOUSEEVENTF_WHEEL,
+                MOUSEEVENTF_WHEEL, MOUSEINPUT,
             };
             use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
 
@@ -166,7 +167,7 @@ impl ReplayState {
                         if *vk_code > 255 {
                             return Err(format!("Invalid virtual key code: {}", vk_code));
                         }
-                        
+
                         let mut input = INPUT {
                             r#type: INPUT_KEYBOARD,
                             Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
@@ -182,7 +183,10 @@ impl ReplayState {
 
                         let result = SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32);
                         if result == 0 {
-                            return Err(format!("Failed to send key down event for VK code: {}", vk_code));
+                            return Err(format!(
+                                "Failed to send key down event for VK code: {}",
+                                vk_code
+                            ));
                         }
                     }
                     EventType::KeyUp { vk_code } => {
@@ -190,7 +194,7 @@ impl ReplayState {
                         if *vk_code > 255 {
                             return Err(format!("Invalid virtual key code: {}", vk_code));
                         }
-                        
+
                         let mut input = INPUT {
                             r#type: INPUT_KEYBOARD,
                             Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
@@ -206,7 +210,10 @@ impl ReplayState {
 
                         let result = SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32);
                         if result == 0 {
-                            return Err(format!("Failed to send key up event for VK code: {}", vk_code));
+                            return Err(format!(
+                                "Failed to send key up event for VK code: {}",
+                                vk_code
+                            ));
                         }
                     }
                 }
@@ -227,4 +234,3 @@ impl Default for ReplayState {
         Self::new()
     }
 }
-

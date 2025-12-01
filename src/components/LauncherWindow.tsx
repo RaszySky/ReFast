@@ -4,6 +4,7 @@ import type { AppInfo, FileHistoryItem, EverythingResult } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 type SearchResult = {
   type: "app" | "file" | "everything" | "url";
@@ -36,8 +37,10 @@ export function LauncherWindow() {
   const [isLoading, setIsLoading] = useState(false);
   const [isHoveringConfigIcon, setIsHoveringConfigIcon] = useState(false);
   const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Check if Everything is available on mount
   useEffect(() => {
@@ -708,6 +711,56 @@ export function LauncherWindow() {
     }
   };
 
+  const handleContextMenu = (e: React.MouseEvent, result: SearchResult) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, result });
+  };
+
+  const handleRevealInFolder = async () => {
+    if (!contextMenu) return;
+    
+    try {
+      const path = contextMenu.result.path;
+      console.log("Revealing in folder:", path);
+      // Only reveal for file types (file, everything), not for apps or URLs
+      if (contextMenu.result.type === "file" || contextMenu.result.type === "everything") {
+        // Use Tauri opener plugin to reveal file in folder
+        await revealItemInDir(path);
+        console.log("Reveal in folder called successfully");
+      }
+      setContextMenu(null);
+    } catch (error) {
+      console.error("Failed to reveal in folder:", error);
+      alert(`打开文件夹失败: ${error}`);
+      setContextMenu(null);
+    }
+  };
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+
+    if (contextMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleEscape);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleEscape);
+      };
+    }
+  }, [contextMenu]);
+
   const handlePaste = async (e: React.ClipboardEvent) => {
     const clipboardTypes = Array.from(e.clipboardData.types);
     console.log("Clipboard types:", clipboardTypes);
@@ -1017,6 +1070,7 @@ export function LauncherWindow() {
                 <div
                   key={`${result.type}-${result.path}-${index}`}
                   onClick={() => handleLaunch(result)}
+                  onContextMenu={(e) => handleContextMenu(e, result)}
                   className={`px-6 py-3 cursor-pointer transition-all ${
                     index === selectedIndex
                       ? "bg-blue-500 text-white"
@@ -1347,6 +1401,35 @@ export function LauncherWindow() {
               ) : null}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed bg-gray-800 text-white rounded-lg shadow-xl py-1 min-w-[160px] z-50"
+          style={{
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+          }}
+        >
+          {(contextMenu.result.type === "file" || contextMenu.result.type === "everything") && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleRevealInFolder();
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              className="w-full text-left px-4 py-2 text-sm hover:bg-gray-700 transition-colors"
+            >
+              打开所在文件夹
+            </button>
+          )}
         </div>
       )}
     </div>

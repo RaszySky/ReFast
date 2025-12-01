@@ -4,18 +4,15 @@ pub mod windows {
     use std::thread;
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, WPARAM},
-        UI::WindowsAndMessaging::{
-            DispatchMessageW, GetMessageW, TranslateMessage,
-            MSG,
-        },
+        UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, TranslateMessage, MSG},
     };
-    
+
     // These functions are in user32.dll but not exposed in windows-sys
     extern "system" {
         fn RegisterHotKey(hWnd: HWND, id: i32, fsModifiers: u32, vk: u32) -> i32;
         fn UnregisterHotKey(hWnd: HWND, id: i32) -> i32;
     }
-    
+
     const MOD_ALT: u32 = 0x0001;
 
     const HOTKEY_ID_ALT_SPACE: i32 = 1;
@@ -28,12 +25,12 @@ pub mod windows {
     ) -> Result<thread::JoinHandle<()>, String> {
         let handle = thread::spawn(move || {
             unsafe {
-                use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    CreateWindowExW, RegisterClassW, UnregisterClassW,
-                    CW_USEDEFAULT, WS_OVERLAPPED, WNDCLASSW,
-                };
                 use std::ffi::OsStr;
                 use std::os::windows::ffi::OsStrExt;
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    CreateWindowExW, RegisterClassW, UnregisterClassW, CW_USEDEFAULT, WNDCLASSW,
+                    WS_OVERLAPPED,
+                };
 
                 // Create a window class
                 let class_name: Vec<u16> = OsStr::new("ReFastHotkeyWindow")
@@ -91,12 +88,7 @@ pub mod windows {
                 );
 
                 // Register hotkey
-                let result = RegisterHotKey(
-                    hwnd,
-                    HOTKEY_ID_ALT_SPACE,
-                    MOD_ALT,
-                    VK_SPACE,
-                );
+                let result = RegisterHotKey(hwnd, HOTKEY_ID_ALT_SPACE, MOD_ALT, VK_SPACE);
 
                 if result == 0 {
                     eprintln!("Failed to register global hotkey");
@@ -125,12 +117,12 @@ pub mod windows {
                 loop {
                     // Use NULL (0) to receive messages for all windows in the thread
                     let result = GetMessageW(&mut msg, 0, 0, 0);
-                    
+
                     if result == 0 {
                         // WM_QUIT
                         break;
                     }
-                    
+
                     if result == -1 {
                         // Error
                         eprintln!("GetMessage error");
@@ -143,7 +135,7 @@ pub mod windows {
 
                 // Cleanup
                 let _ = UnregisterHotKey(hwnd, HOTKEY_ID_ALT_SPACE);
-                
+
                 // Free the sender pointer
                 let sender_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
                     hwnd,
@@ -152,7 +144,7 @@ pub mod windows {
                 if !sender_ptr.is_null() {
                     let _ = Box::from_raw(sender_ptr);
                 }
-                
+
                 let _ = UnregisterClassW(class_name.as_ptr(), 0);
             }
         });
@@ -166,7 +158,9 @@ pub mod windows {
         wparam: WPARAM,
         _lparam: LPARAM,
     ) -> LRESULT {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{WM_HOTKEY, WM_DESTROY, PostQuitMessage, DefWindowProcW};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            DefWindowProcW, PostQuitMessage, WM_DESTROY, WM_HOTKEY,
+        };
 
         match msg {
             WM_HOTKEY => {
@@ -176,7 +170,7 @@ pub mod windows {
                         hwnd,
                         windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
                     ) as *mut mpsc::Sender<()>;
-                    
+
                     if !sender_ptr.is_null() {
                         let sender = &*sender_ptr;
                         let _ = sender.send(());
@@ -204,4 +198,3 @@ pub mod windows {
         Err("Hotkey listener is only supported on Windows".to_string())
     }
 }
-
