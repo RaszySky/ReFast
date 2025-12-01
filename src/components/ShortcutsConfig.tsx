@@ -259,23 +259,14 @@ export function ShortcutsConfig({ onClose }: ShortcutsConfigProps) {
       {/* Header - Fixed */}
       <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
         <h3 className="text-lg font-semibold text-gray-800">快捷访问配置</h3>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleExport}
-            disabled={isLoading || fileHistory.length === 0}
-            className="px-4 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-            title="导出配置"
-          >
-            导出
-          </button>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-            style={{ fontSize: '24px', lineHeight: '1' }}
-          >
-            ×
-          </button>
-        </div>
+        <button
+          onClick={handleExport}
+          disabled={isLoading || fileHistory.length === 0}
+          className="px-4 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+          title="导出配置"
+        >
+          导出
+        </button>
       </div>
 
       {/* Content - Scrollable */}
