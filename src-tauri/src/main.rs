@@ -30,10 +30,11 @@ fn main() {
             let show_launcher =
                 MenuItem::with_id(app, "show_launcher", "显示启动器", true, None::<&str>)?;
             let show_main = MenuItem::with_id(app, "show_main", "显示主窗口", true, None::<&str>)?;
+            let open_logs = MenuItem::with_id(app, "open_logs", "打开日志文件夹", true, None::<&str>)?;
             let restart = MenuItem::with_id(app, "restart", "重启程序", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
-            let menu = Menu::with_items(app, &[&show_launcher, &show_main, &restart, &quit])?;
+            let menu = Menu::with_items(app, &[&show_launcher, &show_main, &open_logs, &restart, &quit])?;
 
             // Create tray icon - use default window icon (which loads from tauri.conf.json)
             let mut tray_builder = TrayIconBuilder::new().menu(&menu).tooltip("ReFast");
@@ -87,6 +88,51 @@ fn main() {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                        }
+                    }
+                    "open_logs" => {
+                        #[cfg(target_os = "windows")]
+                        {
+                            use crate::everything_search::windows;
+                            let log_dir = windows::get_log_dir();
+                            
+                            // 确保日志目录存在
+                            if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                                eprintln!("Failed to create log directory: {}", e);
+                            }
+                            
+                            // 使用 explorer 打开文件夹
+                            if let Some(log_dir_str) = log_dir.to_str() {
+                                let _ = std::process::Command::new("explorer")
+                                    .arg(log_dir_str)
+                                    .spawn();
+                            }
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            // 其他平台：使用临时目录下的日志文件夹
+                            use std::path::PathBuf;
+                            let log_dir = std::env::temp_dir().join("re-fast-logs");
+                            
+                            // 确保日志目录存在
+                            if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                                eprintln!("Failed to create log directory: {}", e);
+                            }
+                            
+                            if let Some(log_dir_str) = log_dir.to_str() {
+                                #[cfg(target_os = "macos")]
+                                {
+                                    let _ = std::process::Command::new("open")
+                                        .arg(log_dir_str)
+                                        .spawn();
+                                }
+                                #[cfg(target_os = "linux")]
+                                {
+                                    let _ = std::process::Command::new("xdg-open")
+                                        .arg(log_dir_str)
+                                        .spawn();
+                                }
+                            }
                         }
                     }
                     "restart" => {

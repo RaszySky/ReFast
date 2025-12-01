@@ -151,7 +151,7 @@ pub mod windows {
         >,
     > = OnceLock::new();
 
-    // 日志文件（使用临时目录，按天生成）
+    // 日志文件（使用应用数据目录下的 logs 文件夹，按天生成）
     struct LogFileState {
         file: Option<File>,
         file_path: PathBuf,
@@ -160,13 +160,34 @@ pub mod windows {
 
     static LOG_FILE_STATE: OnceLock<Arc<Mutex<LogFileState>>> = OnceLock::new();
 
+    /// 获取日志目录路径
+    pub fn get_log_dir() -> PathBuf {
+        // 优先使用 APPDATA 环境变量
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            PathBuf::from(appdata).join("re-fast").join("logs")
+        } else {
+            // 回退到临时目录
+            std::env::temp_dir().join("re-fast-logs")
+        }
+    }
+
     fn get_log_file_state() -> Arc<Mutex<LogFileState>> {
         LOG_FILE_STATE
             .get_or_init(|| {
                 // 初始化日志文件状态
                 let today = chrono::Local::now().format("%Y%m%d").to_string();
-                let log_path =
-                    std::env::temp_dir().join(format!("re-fast-everything-ipc-{}.log", today));
+                let log_dir = get_log_dir();
+                
+                // 确保日志目录存在
+                if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                    eprintln!(
+                        "[DEBUG] ERROR: Failed to create log directory {}: {}",
+                        log_dir.display(),
+                        e
+                    );
+                }
+                
+                let log_path = log_dir.join(format!("everything-ipc-{}.log", today));
 
                 let file = OpenOptions::new()
                     .create(true)
@@ -214,8 +235,18 @@ pub mod windows {
             }
 
             // 创建新的日志文件
-            let log_path =
-                std::env::temp_dir().join(format!("re-fast-everything-ipc-{}.log", today));
+            let log_dir = get_log_dir();
+            
+            // 确保日志目录存在
+            if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                eprintln!(
+                    "[DEBUG] ERROR: Failed to create log directory {}: {}",
+                    log_dir.display(),
+                    e
+                );
+            }
+            
+            let log_path = log_dir.join(format!("everything-ipc-{}.log", today));
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -657,9 +688,6 @@ pub mod windows {
             );
             return Err(EverythingError::IpcFailed("回复数据太短".to_string()));
         }
-
-        //不往下执行
-        return Ok((Vec::new(), 0, 0, 0));
 
         unsafe {
             // 性能优化：只在调试模式下打印详细数据
