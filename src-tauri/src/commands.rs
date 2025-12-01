@@ -1397,6 +1397,41 @@ pub fn delete_shortcut(id: String, app: tauri::AppHandle) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Open URL in default browser on Windows
+        std::process::Command::new("cmd")
+            .args(&["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // Open URL in default browser on macOS
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Open URL in default browser on Linux
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("URL opening is not supported on this platform".to_string())
+    }
+}
+
+#[tauri::command]
 pub async fn show_shortcuts_config(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     

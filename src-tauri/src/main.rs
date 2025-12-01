@@ -216,6 +216,7 @@ fn main() {
             delete_file_history,
             update_file_history_name,
             show_shortcuts_config,
+            open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

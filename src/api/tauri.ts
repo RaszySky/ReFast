@@ -158,5 +158,9 @@ export const tauriApi = {
   async showShortcutsConfig(): Promise<void> {
     return invoke("show_shortcuts_config");
   },
+
+  async openUrl(url: string): Promise<void> {
+    return invoke("open_url", { url });
+  },
 };
 

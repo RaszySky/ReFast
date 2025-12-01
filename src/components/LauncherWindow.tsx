@@ -6,10 +6,11 @@ import { LogicalSize } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
 type SearchResult = {
-  type: "app" | "file" | "everything";
+  type: "app" | "file" | "everything" | "url";
   app?: AppInfo;
   file?: FileHistoryItem;
   everything?: EverythingResult;
+  url?: string;
   displayName: string;
   path: string;
 };
@@ -34,6 +35,7 @@ export function LauncherWindow() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isHoveringConfigIcon, setIsHoveringConfigIcon] = useState(false);
+  const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -247,6 +249,45 @@ export function LauncherWindow() {
     };
   }, []);
 
+  // Extract URLs from text
+  const extractUrls = (text: string): string[] => {
+    if (!text || text.trim().length === 0) return [];
+    
+    // URL regex pattern - matches http://, https://, and common URL patterns
+    // This pattern matches:
+    // - http:// or https:// URLs
+    // - www. URLs
+    // - Domain-like patterns (e.g., example.com, github.com/user/repo)
+    const urlPattern = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}[^\s<>"']*)/gi;
+    const matches = text.match(urlPattern);
+    if (!matches) return [];
+    
+    // Normalize URLs (add https:// if missing)
+    return matches.map(url => {
+      url = url.trim();
+      // Remove trailing punctuation that might not be part of the URL
+      // But keep /, ?, #, &, = which are valid URL characters
+      url = url.replace(/[.,;:!?]+(?![\/?#&=])$/, '');
+      
+      // Validate and normalize URL
+      if (!url.match(/^https?:\/\//i)) {
+        if (url.startsWith('www.')) {
+          return 'https://' + url;
+        }
+        // For domain-like patterns, add https://
+        // Match patterns like: domain.com, subdomain.domain.com, domain.com/path
+        if (url.match(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}/)) {
+          return 'https://' + url;
+        }
+        // If it doesn't match domain pattern, skip it
+        return null;
+      }
+      return url;
+    })
+    .filter((url): url is string => url !== null && url.length > 0) // Remove nulls and empty strings
+    .filter((url, index, self) => self.indexOf(url) === index); // Remove duplicates
+  };
+
   // Search applications, file history, and Everything when query changes (with debounce)
   useEffect(() => {
     if (query.trim() === "") {
@@ -260,11 +301,16 @@ export function LauncherWindow() {
       setEverythingResults([]);
       setEverythingTotalCount(null);
       setEverythingTotalCount(null);
+      setDetectedUrls([]);
       setResults([]);
       setSelectedIndex(0);
       setIsSearchingEverything(false);
       return;
     }
+    
+    // Extract URLs from query
+    const urls = extractUrls(query);
+    setDetectedUrls(urls);
     
     // Debounce search to avoid too many requests
     const timeoutId = setTimeout(() => {
@@ -282,9 +328,16 @@ export function LauncherWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, isEverythingAvailable]);
 
-  // Combine apps, files, and Everything results into results when they change
+  // Combine apps, files, Everything results, and URLs into results when they change
   useEffect(() => {
     const combinedResults: SearchResult[] = [
+      // URLs first (highest priority when detected)
+      ...detectedUrls.map((url) => ({
+        type: "url" as const,
+        url,
+        displayName: url,
+        path: url,
+      })),
       ...filteredApps.map((app) => ({
         type: "app" as const,
         app,
@@ -330,7 +383,7 @@ export function LauncherWindow() {
     
     // Adjust size after results update - use longer delay to ensure DOM is ready
     setTimeout(adjustWindowSize, 200);
-  }, [filteredApps, filteredFiles, everythingResults]);
+  }, [filteredApps, filteredFiles, everythingResults, detectedUrls]);
 
     // Adjust window size when results actually change
     useEffect(() => {
@@ -635,7 +688,9 @@ export function LauncherWindow() {
 
   const handleLaunch = async (result: SearchResult) => {
     try {
-      if (result.type === "app" && result.app) {
+      if (result.type === "url" && result.url) {
+        await tauriApi.openUrl(result.url);
+      } else if (result.type === "app" && result.app) {
         await tauriApi.launchApplication(result.app);
       } else if (result.type === "file" && result.file) {
         await tauriApi.launchFile(result.file.path);
@@ -999,6 +1054,22 @@ export function LauncherWindow() {
                             }
                           }}
                         />
+                      ) : result.type === "url" ? (
+                        <svg
+                          className={`w-5 h-5 ${
+                            index === selectedIndex ? "text-white" : "text-blue-500"
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                          />
+                        </svg>
                       ) : result.type === "file" || result.type === "everything" ? (
                         <svg
                           className={`w-5 h-5 ${
@@ -1051,6 +1122,20 @@ export function LauncherWindow() {
                           }`}
                         >
                           使用 {result.file.use_count} 次
+                        </div>
+                      )}
+                      {result.type === "url" && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded ${
+                              index === selectedIndex
+                                ? "bg-blue-400 text-white"
+                                : "bg-blue-100 text-blue-700"
+                            }`}
+                            title="可打开的 URL"
+                          >
+                            URL
+                          </span>
                         </div>
                       )}
                       {result.type === "everything" && (
