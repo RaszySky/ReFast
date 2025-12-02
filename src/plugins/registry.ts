@@ -216,3 +216,4 @@ export class PluginRegistry {
 // 单例
 export const pluginRegistry = new PluginRegistry();
 
+

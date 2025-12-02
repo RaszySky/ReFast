@@ -479,7 +479,35 @@ pub fn scan_applications(app: tauri::AppHandle) -> Result<Vec<app_search::AppInf
     // Cache the results
     *cache_guard = Some(apps.clone());
 
+    // Save to disk cache
+    let _ = app_search::windows::save_cache(&app_data_dir, &apps);
+
     // No background icon extraction - icons will be extracted on-demand during search
+    Ok(apps)
+}
+
+#[tauri::command]
+pub fn rescan_applications(app: tauri::AppHandle) -> Result<Vec<app_search::AppInfo>, String> {
+    let cache = APP_CACHE.clone();
+    let mut cache_guard = cache.lock().map_err(|e| e.to_string())?;
+
+    // Clear memory cache
+    *cache_guard = None;
+
+    // Clear disk cache
+    let app_data_dir = get_app_data_dir(&app)?;
+    let cache_file = app_search::windows::get_cache_file_path(&app_data_dir);
+    let _ = fs::remove_file(&cache_file); // Ignore errors if file doesn't exist
+
+    // Force rescan
+    let apps = app_search::windows::scan_start_menu()?;
+
+    // Cache the results
+    *cache_guard = Some(apps.clone());
+
+    // Save to disk cache
+    let _ = app_search::windows::save_cache(&app_data_dir, &apps);
+
     Ok(apps)
 }
 

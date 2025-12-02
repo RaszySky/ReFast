@@ -67,9 +67,13 @@ pub mod windows {
     pub fn scan_start_menu() -> Result<Vec<AppInfo>, String> {
         let mut apps = Vec::new();
 
-        // Common start menu paths - scan both user and system start menus
+        // Common start menu paths - scan user, local user, and system start menus
+        // Many apps (like Cursor) install shortcuts in LOCALAPPDATA instead of APPDATA
         let start_menu_paths = vec![
             env::var("APPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Microsoft/Windows/Start Menu/Programs")),
+            env::var("LOCALAPPDATA")
                 .ok()
                 .map(|p| PathBuf::from(p).join("Microsoft/Windows/Start Menu/Programs")),
             env::var("PROGRAMDATA")
@@ -80,15 +84,42 @@ pub mod windows {
         for start_menu_path in start_menu_paths.into_iter().flatten() {
             if start_menu_path.exists() {
                 // Start scanning from depth 0, limit to 3 levels for better coverage
-                if let Err(_) = scan_directory(&start_menu_path, &mut apps, 0) {
+                if let Err(e) = scan_directory(&start_menu_path, &mut apps, 0) {
+                    eprintln!("[DEBUG] Error scanning {:?}: {}", start_menu_path, e);
                     // Continue on error
+                } else {
+                    eprintln!("[DEBUG] Scanned {:?}, found {} apps so far", start_menu_path, apps.len());
                 }
+            } else {
+                eprintln!("[DEBUG] Path does not exist: {:?}", start_menu_path);
             }
         }
 
-        // Remove duplicates based on name
-        apps.sort_by(|a, b| a.name.cmp(&b.name));
+        eprintln!("[DEBUG] Total apps found before dedup: {}", apps.len());
+
+        // Remove duplicates based on path (more accurate than name)
+        apps.sort_by(|a, b| a.path.cmp(&b.path));
+        apps.dedup_by(|a, b| a.path == b.path);
+
+        // If still duplicates by name, keep the one with shorter path (usually the main shortcut)
+        apps.sort_by(|a, b| {
+            let name_cmp = a.name.cmp(&b.name);
+            if name_cmp == std::cmp::Ordering::Equal {
+                a.path.len().cmp(&b.path.len())
+            } else {
+                name_cmp
+            }
+        });
         apps.dedup_by(|a, b| a.name == b.name);
+
+        eprintln!("[DEBUG] Total apps after dedup: {}", apps.len());
+        
+        // Debug: Check if Cursor is in the list
+        if let Some(cursor_app) = apps.iter().find(|a| a.name.to_lowercase().contains("cursor")) {
+            eprintln!("[DEBUG] Found Cursor: name={}, path={}", cursor_app.name, cursor_app.path);
+        } else {
+            eprintln!("[DEBUG] Cursor not found in scanned apps");
+        }
 
         Ok(apps)
     }

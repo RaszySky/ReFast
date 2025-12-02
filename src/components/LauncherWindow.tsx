@@ -495,6 +495,12 @@ export function LauncherWindow() {
 
   const searchMemos = async (q: string) => {
     try {
+      // Don't search if query is empty
+      if (!q || q.trim() === "") {
+        setFilteredMemos([]);
+        return;
+      }
+      
       // 简单策略：前端过滤本地 memos，如果需要更复杂的可以调用后端 search_memos
       const lower = q.toLowerCase();
       const filtered = memos.filter(
@@ -502,15 +508,36 @@ export function LauncherWindow() {
           m.title.toLowerCase().includes(lower) ||
           m.content.toLowerCase().includes(lower)
       );
-      setFilteredMemos(filtered);
+      
+      // Only update if query hasn't changed
+      if (query.trim() === q.trim()) {
+        setFilteredMemos(filtered);
+      } else {
+        setFilteredMemos([]);
+      }
     } catch (error) {
       console.error("Failed to search memos:", error);
+      if (!q || q.trim() === "") {
+        setFilteredMemos([]);
+      }
     }
   };
 
   const handleSearchPlugins = (q: string) => {
+    // Don't search if query is empty
+    if (!q || q.trim() === "") {
+      setFilteredPlugins([]);
+      return;
+    }
+    
     const filtered = searchPlugins(q);
-    setFilteredPlugins(filtered.map(p => ({ id: p.id, name: p.name, description: p.description })));
+    
+    // Only update if query hasn't changed
+    if (query.trim() === q.trim()) {
+      setFilteredPlugins(filtered.map(p => ({ id: p.id, name: p.name, description: p.description })));
+    } else {
+      setFilteredPlugins([]);
+    }
   };
 
   // Combine apps, files, Everything results, and URLs into results when they change
@@ -595,32 +622,69 @@ export function LauncherWindow() {
     return [...urlResults, ...otherResults];
   }, [filteredApps, filteredFiles, filteredMemos, filteredPlugins, systemFolders, everythingResults, detectedUrls, openHistory, query]);
 
+  // 使用 ref 来跟踪当前的 query，避免闭包问题
+  const queryRef = useRef(query);
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+
   // 分批加载结果的函数
   const loadResultsIncrementally = (allResults: SearchResult[]) => {
     // 取消之前的增量加载
     if (incrementalLoadRef.current !== null) {
       cancelAnimationFrame(incrementalLoadRef.current);
+      incrementalLoadRef.current = null;
+    }
+
+    // 如果 query 为空，直接清空结果并返回
+    if (queryRef.current.trim() === "") {
+      setResults([]);
+      return;
     }
 
     const INITIAL_COUNT = 100; // 初始显示100条
     const INCREMENT = 50; // 每次增加50条
     const DELAY_MS = 16; // 每帧延迟（约60fps）
 
-    // 重置显示数量
-    setResults(allResults.slice(0, INITIAL_COUNT));
+    // 重置显示数量（但先检查 query 是否仍然有效）
+    if (queryRef.current.trim() !== "") {
+      setResults(allResults.slice(0, INITIAL_COUNT));
+    } else {
+      setResults([]);
+      return;
+    }
 
     // 如果结果数量少于初始数量，直接返回
     if (allResults.length <= INITIAL_COUNT) {
-      setResults(allResults);
+      if (queryRef.current.trim() !== "") {
+        setResults(allResults);
+      } else {
+        setResults([]);
+      }
       return;
     }
 
     // 逐步加载更多结果
     let currentCount = INITIAL_COUNT;
     const loadMore = () => {
+      // 在每次更新前检查 query 是否为空（使用 ref 获取最新值）
+      if (queryRef.current.trim() === "") {
+        setResults([]);
+        incrementalLoadRef.current = null;
+        return;
+      }
+
       if (currentCount < allResults.length) {
         currentCount = Math.min(currentCount + INCREMENT, allResults.length);
-        setResults(allResults.slice(0, currentCount));
+        
+        // 再次检查 query（防止在异步操作期间被清空）
+        if (queryRef.current.trim() !== "") {
+          setResults(allResults.slice(0, currentCount));
+        } else {
+          setResults([]);
+          incrementalLoadRef.current = null;
+          return;
+        }
         
         if (currentCount < allResults.length) {
           incrementalLoadRef.current = requestAnimationFrame(() => {
@@ -641,6 +705,16 @@ export function LauncherWindow() {
   };
 
   useEffect(() => {
+    // 如果查询为空，直接清空结果
+    if (query.trim() === "") {
+      setResults([]);
+      if (incrementalLoadRef.current !== null) {
+        cancelAnimationFrame(incrementalLoadRef.current);
+        incrementalLoadRef.current = null;
+      }
+      return;
+    }
+    
     // 使用分批加载来更新结果，避免一次性渲染大量DOM导致卡顿
     loadResultsIncrementally(combinedResults);
     
@@ -651,7 +725,7 @@ export function LauncherWindow() {
         incrementalLoadRef.current = null;
       }
     };
-  }, [combinedResults]);
+  }, [combinedResults, query]);
 
   useEffect(() => {
     // 保存当前滚动位置（如果需要保持）
@@ -783,13 +857,16 @@ export function LauncherWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex]); // 只依赖 selectedIndex，避免在结果更新时触发滚动
 
-  const loadApplications = async () => {
+  const loadApplications = async (forceRescan: boolean = false) => {
     try {
       setIsLoading(true);
       await new Promise<void>((resolve) => {
         setTimeout(async () => {
           try {
-            const allApps = await tauriApi.scanApplications();
+            const allApps = forceRescan 
+              ? await tauriApi.rescanApplications()
+              : await tauriApi.scanApplications();
+            console.log(`[DEBUG] Loaded ${allApps.length} applications, forceRescan=${forceRescan}`);
             setApps(allApps);
             setFilteredApps(allApps.slice(0, 10));
           } catch (error) {
@@ -810,37 +887,94 @@ export function LauncherWindow() {
     }
   };
 
+  const rescanApplications = async () => {
+    await loadApplications(true);
+  };
+
   const searchApplications = async (searchQuery: string) => {
     try {
+      // Don't search if query is empty
+      if (!searchQuery || searchQuery.trim() === "") {
+        setFilteredApps([]);
+        return;
+      }
+      
       // If apps not loaded yet, load them first
       if (apps.length === 0 && !isLoading) {
         await loadApplications();
       }
       
+      // Double check query is still valid after async operations
+      if (!searchQuery || searchQuery.trim() === "") {
+        setFilteredApps([]);
+        return;
+      }
+      
       const results = await tauriApi.searchApplications(searchQuery);
-      setFilteredApps(results);
+      
+      // Final check: only update if query hasn't changed
+      if (query.trim() === searchQuery.trim()) {
+        setFilteredApps(results);
+      } else {
+        // Query changed during search, ignore results
+        setFilteredApps([]);
+      }
     } catch (error) {
       console.error("Failed to search applications:", error);
+      // Only clear on error if query is empty
+      if (!searchQuery || searchQuery.trim() === "") {
+        setFilteredApps([]);
+      }
     }
   };
 
   const searchFileHistory = async (searchQuery: string) => {
     try {
+      // Don't search if query is empty
+      if (!searchQuery || searchQuery.trim() === "") {
+        setFilteredFiles([]);
+        return;
+      }
+      
       const results = await tauriApi.searchFileHistory(searchQuery);
-      setFilteredFiles(results);
+      
+      // Only update if query hasn't changed
+      if (query.trim() === searchQuery.trim()) {
+        setFilteredFiles(results);
+      } else {
+        setFilteredFiles([]);
+      }
     } catch (error) {
       console.error("Failed to search file history:", error);
+      if (!searchQuery || searchQuery.trim() === "") {
+        setFilteredFiles([]);
+      }
     }
   };
 
   const searchSystemFolders = async (searchQuery: string) => {
     try {
+      // Don't search if query is empty
+      if (!searchQuery || searchQuery.trim() === "") {
+        setSystemFolders([]);
+        return;
+      }
+      
       console.log("[前端] searchSystemFolders called with query:", searchQuery);
       const results = await tauriApi.searchSystemFolders(searchQuery);
       console.log("[前端] searchSystemFolders returned results:", results);
-      setSystemFolders(results);
+      
+      // Only update if query hasn't changed
+      if (query.trim() === searchQuery.trim()) {
+        setSystemFolders(results);
+      } else {
+        setSystemFolders([]);
+      }
     } catch (error) {
       console.error("Failed to search system folders:", error);
+      if (!searchQuery || searchQuery.trim() === "") {
+        setSystemFolders([]);
+      }
     }
   };
 
@@ -864,14 +998,14 @@ export function LauncherWindow() {
           return;
         }
 
-        // 更新总数和当前已加载数量（用于进度显示）
-        setEverythingTotalCount(total_count);
-        setEverythingCurrentCount(current_count);
-
-        // 累积批次结果，实现流式展示
-        // 注意：total_count 是 Everything 找到的总数，可能远大于后端实际返回的结果数（500）
-        // 所以这里不限制累积数量，最终结果会在 searchEverything 的最终响应中覆盖
+        // 如果当前 query 为空，忽略批次结果（防止在清空搜索后仍显示结果）
+        // 使用函数式更新来获取最新的 query 值
         setEverythingResults((prev) => {
+          // 检查当前 query 是否为空（通过检查 currentSearchRef）
+          if (!currentSearchRef.current || currentSearchRef.current.cancelled) {
+            return prev; // 保持当前状态，不更新
+          }
+          
           // 如果这是新搜索的第一批（prev.length === 0），直接用这一批
           if (prev.length === 0) {
             return batchResults.slice(); // 拷贝一份
@@ -881,6 +1015,12 @@ export function LauncherWindow() {
           // 不限制数量，因为最终结果会在 searchEverything 的最终响应中覆盖
           return [...prev, ...batchResults];
         });
+
+        // 只有在搜索未取消时才更新总数和当前已加载数量
+        if (currentSearchRef.current && !currentSearchRef.current.cancelled) {
+          setEverythingTotalCount(total_count);
+          setEverythingCurrentCount(current_count);
+        }
 
       });
 
@@ -897,6 +1037,20 @@ export function LauncherWindow() {
   }, []);
 
   const searchEverything = async (searchQuery: string) => {
+    // Don't search if query is empty
+    if (!searchQuery || searchQuery.trim() === "") {
+      setEverythingResults([]);
+      setEverythingTotalCount(null);
+      setEverythingCurrentCount(0);
+      setIsSearchingEverything(false);
+      // 取消当前搜索
+      if (currentSearchRef.current) {
+        currentSearchRef.current.cancelled = true;
+        currentSearchRef.current = null;
+      }
+      return;
+    }
+    
     if (!isEverythingAvailable) {
       setEverythingResults([]);
       setEverythingTotalCount(null);
@@ -927,8 +1081,10 @@ export function LauncherWindow() {
       console.log("Searching Everything with query (streaming):", searchQuery);
       const response = await tauriApi.searchEverything(searchQuery);
       
-      // 检查是否是当前搜索
-      if (currentSearchRef.current?.cancelled || currentSearchRef.current?.query !== searchQuery) {
+      // 检查是否是当前搜索，以及 query 是否仍然有效
+      if (currentSearchRef.current?.cancelled || 
+          currentSearchRef.current?.query !== searchQuery ||
+          query.trim() !== searchQuery.trim()) {
         console.log("Search was cancelled or superseded, ignoring final response");
         return;
       }
@@ -943,11 +1099,22 @@ export function LauncherWindow() {
         everythingResults.length
       );
       
-      // 用最终结果覆盖批次累积的结果，因为最终结果才是后端实际返回的准确结果
-      // 批次事件中的 total_count 是 Everything 找到的总数，可能远大于后端实际返回的结果数
-      setEverythingResults(response.results);
-      setEverythingTotalCount(response.total_count);
-      setEverythingCurrentCount(response.results.length);
+      // 再次检查 query 是否仍然有效（防止在异步操作期间 query 被清空）
+      if (query.trim() === searchQuery.trim() && 
+          currentSearchRef.current && 
+          !currentSearchRef.current.cancelled &&
+          currentSearchRef.current.query === searchQuery) {
+        // 用最终结果覆盖批次累积的结果，因为最终结果才是后端实际返回的准确结果
+        // 批次事件中的 total_count 是 Everything 找到的总数，可能远大于后端实际返回的结果数
+        setEverythingResults(response.results);
+        setEverythingTotalCount(response.total_count);
+        setEverythingCurrentCount(response.results.length);
+      } else {
+        // Query 已改变，清空结果
+        setEverythingResults([]);
+        setEverythingTotalCount(null);
+        setEverythingCurrentCount(0);
+      }
       
       finalResultsSetRef.current = true;
     } catch (error) {

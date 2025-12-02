@@ -438,6 +438,7 @@ fn main() {
             get_playback_status,
             get_playback_progress,
             scan_applications,
+            rescan_applications,
             search_applications,
             launch_application,
             toggle_launcher,

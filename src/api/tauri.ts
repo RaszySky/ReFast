@@ -50,6 +50,10 @@ export const tauriApi = {
     return invoke("scan_applications");
   },
 
+  async rescanApplications(): Promise<AppInfo[]> {
+    return invoke("rescan_applications");
+  },
+
   async searchApplications(query: string): Promise<AppInfo[]> {
     return invoke("search_applications", { query });
   },
