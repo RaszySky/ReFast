@@ -1,11 +1,48 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { plugins } from "../plugins";
+import { plugins, executePlugin } from "../plugins";
+import type { PluginContext } from "../types";
+import { tauriApi } from "../api/tauri";
 
 export function PluginListWindow() {
   const handleClose = async () => {
     const window = getCurrentWindow();
     await window.close();
+  };
+
+  // 处理插件点击
+  const isClosingRef = useRef(false);
+  
+  const handlePluginClick = async (pluginId: string) => {
+    if (isClosingRef.current) return; // 防止重复点击
+    
+    try {
+      isClosingRef.current = true;
+      
+      // 创建插件上下文（在插件列表窗口中，大多数上下文函数不需要，使用空函数即可）
+      const pluginContext: PluginContext = {
+        setQuery: () => {},
+        setSelectedIndex: () => {},
+        hideLauncher: async () => {
+          await handleClose();
+        },
+        tauriApi,
+      };
+
+      // 执行插件
+      await executePlugin(pluginId, pluginContext);
+
+      // 执行完成后关闭插件列表窗口（如果插件没有关闭它）
+      try {
+        await handleClose();
+      } catch (error) {
+        // 如果窗口已经关闭，忽略错误
+        // This is expected if hideLauncher already closed it
+      }
+    } catch (error) {
+      console.error("Failed to execute plugin:", error);
+      isClosingRef.current = false; // 出错时重置，允许重试
+    }
   };
 
   // ESC 键处理
@@ -43,7 +80,8 @@ export function PluginListWindow() {
           {plugins.map((plugin) => (
             <div
               key={plugin.id}
-              className="p-4 border border-gray-200 rounded-lg hover:bg-white transition-colors bg-white"
+              onClick={() => handlePluginClick(plugin.id)}
+              className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors bg-white cursor-pointer active:bg-gray-100"
             >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0 bg-green-100">
