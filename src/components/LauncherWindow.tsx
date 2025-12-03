@@ -2950,46 +2950,37 @@ export function LauncherWindow() {
       )}
 
       {/* Context Menu */}
-      {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className="fixed bg-white border border-gray-200 text-gray-800 rounded-lg shadow-xl py-1 min-w-[160px] z-50"
-          style={{
-            left: `${contextMenu.x}px`,
-            top: `${contextMenu.y}px`,
-          }}
-        >
-          {(contextMenu.result.type === "file" ||
-            contextMenu.result.type === "everything" ||
-            contextMenu.result.type === "system_folder" ||
-            contextMenu.result.type === "app") && (
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleRevealInFolder();
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
-            >
-              打开所在文件夹
-            </button>
-          )}
-          {contextMenu.result.type === "memo" && contextMenu.result.memo && (
-            <>
+      {contextMenu && (() => {
+        // 检查是否有菜单项需要显示
+        const hasFileMenu = contextMenu.result.type === "file" ||
+          contextMenu.result.type === "everything" ||
+          contextMenu.result.type === "system_folder" ||
+          contextMenu.result.type === "app";
+        const hasMemoMenu = contextMenu.result.type === "memo" && contextMenu.result.memo;
+        const hasUrlMenu = contextMenu.result.type === "url" && contextMenu.result.url;
+        const hasJsonMenu = contextMenu.result.type === "json_formatter" && contextMenu.result.jsonContent;
+        const hasAiMenu = contextMenu.result.type === "ai" && contextMenu.result.aiAnswer;
+        
+        // 如果没有菜单项，不显示菜单
+        if (!hasFileMenu && !hasMemoMenu && !hasUrlMenu && !hasJsonMenu && !hasAiMenu) {
+          return null;
+        }
+        
+        return (
+          <div
+            ref={contextMenuRef}
+            className="fixed bg-white border border-gray-200 text-gray-800 rounded-lg shadow-xl py-1 min-w-[160px] z-50"
+            style={{
+              left: `${contextMenu.x}px`,
+              top: `${contextMenu.y}px`,
+            }}
+          >
+            {hasFileMenu && (
               <button
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setSelectedMemo(contextMenu.result.memo!);
-                  setMemoEditTitle(contextMenu.result.memo!.title);
-                  setMemoEditContent(contextMenu.result.memo!.content);
-                  setIsEditingMemo(true);
-                  setIsMemoModalOpen(true);
-                  setContextMenu(null);
+                  handleRevealInFolder();
                 }}
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -2997,30 +2988,76 @@ export function LauncherWindow() {
                 }}
                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
               >
-                编辑备忘录
+                打开所在文件夹
               </button>
+            )}
+            {hasMemoMenu && (
+              <>
+                <button
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedMemo(contextMenu.result.memo!);
+                    setMemoEditTitle(contextMenu.result.memo!.title);
+                    setMemoEditContent(contextMenu.result.memo!.content);
+                    setIsEditingMemo(true);
+                    setIsMemoModalOpen(true);
+                    setContextMenu(null);
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
+                >
+                  编辑备忘录
+                </button>
+                <button
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!contextMenu.result.memo) return;
+                    if (!confirm("确定要删除这条备忘录吗？")) {
+                      setContextMenu(null);
+                      return;
+                    }
+                    try {
+                      await tauriApi.deleteMemo(contextMenu.result.memo.id);
+                      const list = await tauriApi.getAllMemos();
+                      setMemos(list);
+                      setContextMenu(null);
+                      // 如果删除的是当前显示的备忘录，关闭弹窗
+                      if (selectedMemo?.id === contextMenu.result.memo.id) {
+                        setIsMemoModalOpen(false);
+                        setSelectedMemo(null);
+                      }
+                    } catch (error) {
+                      console.error("Failed to delete memo:", error);
+                      alert(`删除备忘录失败: ${error}`);
+                      setContextMenu(null);
+                    }
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  删除备忘录
+                </button>
+              </>
+            )}
+            {hasUrlMenu && (
               <button
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (!contextMenu.result.memo) return;
-                  if (!confirm("确定要删除这条备忘录吗？")) {
-                    setContextMenu(null);
-                    return;
-                  }
                   try {
-                    await tauriApi.deleteMemo(contextMenu.result.memo.id);
-                    const list = await tauriApi.getAllMemos();
-                    setMemos(list);
+                    await tauriApi.openUrl(contextMenu.result.url!);
                     setContextMenu(null);
-                    // 如果删除的是当前显示的备忘录，关闭弹窗
-                    if (selectedMemo?.id === contextMenu.result.memo.id) {
-                      setIsMemoModalOpen(false);
-                      setSelectedMemo(null);
-                    }
                   } catch (error) {
-                    console.error("Failed to delete memo:", error);
-                    alert(`删除备忘录失败: ${error}`);
+                    console.error("Failed to open URL:", error);
+                    alert(`打开链接失败: ${error}`);
                     setContextMenu(null);
                   }
                 }}
@@ -3028,14 +3065,62 @@ export function LauncherWindow() {
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
               >
-                删除备忘录
+                打开链接
               </button>
-            </>
-          )}
-        </div>
-      )}
+            )}
+            {hasJsonMenu && (
+              <button
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    await navigator.clipboard.writeText(contextMenu.result.jsonContent!);
+                    alert("JSON 内容已复制到剪贴板");
+                    setContextMenu(null);
+                  } catch (error) {
+                    console.error("Failed to copy JSON:", error);
+                    alert("复制失败，请手动复制");
+                    setContextMenu(null);
+                  }
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
+              >
+                复制 JSON
+              </button>
+            )}
+            {hasAiMenu && (
+              <button
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    await navigator.clipboard.writeText(contextMenu.result.aiAnswer!);
+                    alert("AI 回答已复制到剪贴板");
+                    setContextMenu(null);
+                  } catch (error) {
+                    console.error("Failed to copy AI answer:", error);
+                    alert("复制失败，请手动复制");
+                    setContextMenu(null);
+                  }
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
+              >
+                复制回答
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Memo Detail Modal */}
       {isMemoModalOpen && (
