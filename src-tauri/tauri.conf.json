@@ -14,7 +14,7 @@
         "label": "launcher",
         "title": "ReFast Launcher",
         "width": 672,
-        "height": 80,
+        "height": 200,
         "resizable": false,
         "fullscreen": false,
         "transparent": true,
