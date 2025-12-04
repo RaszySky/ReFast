@@ -1804,6 +1804,8 @@ export function LauncherWindow() {
 
   // Use ref to track current search request and allow cancellation
   const currentSearchRef = useRef<{ query: string; cancelled: boolean } | null>(null);
+  // 跟踪当前显示的搜索 query，用于判断是否是新搜索（避免闪烁）
+  const displayedSearchQueryRef = useRef<string>("");
 
   // 监听 Everything 搜索的批次事件：实时累积结果 + 更新进度（方案 B）
   useEffect(() => {
@@ -1837,8 +1839,18 @@ export function LauncherWindow() {
             return prev; // 保持当前状态，不更新
           }
           
+          const currentQuery = currentSearchRef.current.query;
+          
+          // 如果这是新搜索的第一批（query 不同），清空旧结果并替换为新结果
+          // 这样可以避免在切换搜索关键词时出现闪烁
+          if (displayedSearchQueryRef.current !== currentQuery) {
+            displayedSearchQueryRef.current = currentQuery;
+            return batchResults.slice(); // 拷贝一份，替换旧结果
+          }
+          
           // 如果这是新搜索的第一批（prev.length === 0），直接用这一批
           if (prev.length === 0) {
+            displayedSearchQueryRef.current = currentQuery;
             return batchResults.slice(); // 拷贝一份
           }
 
@@ -1874,6 +1886,7 @@ export function LauncherWindow() {
       setEverythingTotalCount(null);
       setEverythingCurrentCount(0);
       setIsSearchingEverything(false);
+      displayedSearchQueryRef.current = ""; // 清空显示的搜索 query
       // 取消当前搜索
       if (currentSearchRef.current) {
         currentSearchRef.current.cancelled = true;
@@ -1887,6 +1900,7 @@ export function LauncherWindow() {
       setEverythingTotalCount(null);
       setEverythingCurrentCount(0);
       setIsSearchingEverything(false);
+      displayedSearchQueryRef.current = ""; // 清空显示的搜索 query
       return;
     }
     
@@ -1915,8 +1929,9 @@ export function LauncherWindow() {
       timestamp: new Date().toISOString()
     });
     
-    // 重置状态，准备新的搜索（结果由批次事件逐步填充）
-    setEverythingResults([]);
+    // 性能优化：不要立即清空旧结果，避免列表闪烁
+    // 旧结果会保留显示，直到新结果的第一批到达（在批次事件处理中清空）
+    // 只重置计数和 loading 状态
     setEverythingTotalCount(null);
     setEverythingCurrentCount(0);
     setIsSearchingEverything(true);
@@ -1979,6 +1994,8 @@ export function LauncherWindow() {
           setEverythingResults(uniqueResults);
           setEverythingTotalCount(response.total_count);
           setEverythingCurrentCount(uniqueResults.length);
+          // 更新显示的搜索 query
+          displayedSearchQueryRef.current = searchQuery;
         };
         
         // 如果结果数量较少，立即处理；否则延迟处理以避免阻塞 UI
@@ -1993,6 +2010,7 @@ export function LauncherWindow() {
         setEverythingResults([]);
         setEverythingTotalCount(null);
         setEverythingCurrentCount(0);
+        displayedSearchQueryRef.current = ""; // 清空显示的搜索 query
       }
       
       finalResultsSetRef.current = true;
@@ -2891,6 +2909,45 @@ export function LauncherWindow() {
                   </div>
                 )}
               </div>
+            </div>
+          ) : (isSearchingEverything && results.length === 0 && query.trim()) ? (
+            // 骨架屏：搜索中时显示，模拟结果列表样式
+            <div
+              ref={listRef}
+              className="flex-1 overflow-y-auto min-h-0 results-list-scroll"
+              style={{ maxHeight: '500px' }}
+            >
+              {Array.from({ length: 8 }).map((_, index) => {
+                // 为每个骨架项生成固定的宽度，避免每次渲染都变化
+                const titleWidth = 60 + (index % 4) * 8;
+                const pathWidth = 40 + (index % 3) * 6;
+                return (
+                  <div
+                    key={`skeleton-${index}`}
+                    className="px-6 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* 序号骨架 */}
+                      <div className="text-sm font-medium flex-shrink-0 w-8 text-center text-gray-300">
+                        {index + 1}
+                      </div>
+                      {/* 图标骨架 */}
+                      <div className="w-8 h-8 rounded bg-gray-200 animate-pulse flex-shrink-0" />
+                      {/* 内容骨架 */}
+                      <div className="flex-1 min-w-0">
+                        <div 
+                          className="h-4 bg-gray-200 rounded animate-pulse mb-2" 
+                          style={{ width: `${titleWidth}%` }} 
+                        />
+                        <div 
+                          className="h-3 bg-gray-100 rounded animate-pulse" 
+                          style={{ width: `${pathWidth}%` }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : results.length > 0 ? (
             <div
