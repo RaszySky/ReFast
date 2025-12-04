@@ -713,6 +713,18 @@ export function LauncherWindow() {
     }
     
     // Debounce search to avoid too many requests
+    // Dynamic debounce time based on query length:
+    // Short queries (1-2 chars): 300ms
+    // Medium queries (3-5 chars): 200ms
+    // Long queries (6+ chars): 100ms
+    const queryLength = query.trim().length;
+    let debounceTime = 300; // default for short queries
+    if (queryLength >= 3 && queryLength <= 5) {
+      debounceTime = 200; // medium queries
+    } else if (queryLength >= 6) {
+      debounceTime = 100; // long queries
+    }
+    
     const timeoutId = setTimeout(() => {
       searchApplications(query);
       searchFileHistory(query);
@@ -725,7 +737,7 @@ export function LauncherWindow() {
       } else {
         console.log("Everything is not available, skipping search. isEverythingAvailable:", isEverythingAvailable);
       }
-    }, 500); // 500ms debounce
+    }, debounceTime);
     
     return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
