@@ -1318,6 +1318,101 @@ pub fn get_clipboard_file_path() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+pub fn get_clipboard_text() -> Result<Option<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+        use windows_sys::Win32::System::DataExchange::*;
+        use windows_sys::Win32::System::Memory::*;
+
+        const CF_UNICODETEXT: u32 = 13; // Clipboard format for Unicode text
+
+        unsafe {
+            // Open clipboard
+            if OpenClipboard(0) == 0 {
+                return Err("Failed to open clipboard".to_string());
+            }
+
+            let result = (|| -> Result<Option<String>, String> {
+                // Get clipboard data handle
+                let hmem = GetClipboardData(CF_UNICODETEXT) as isize;
+                if hmem == 0 {
+                    return Ok(None);
+                }
+
+                // Lock the memory to get a pointer
+                let ptr = GlobalLock(hmem as *mut _);
+                if ptr.is_null() {
+                    return Ok(None);
+                }
+
+                // Calculate the length of the string (null-terminated)
+                let mut len = 0;
+                let mut current = ptr as *const u16;
+                while *current != 0 {
+                    len += 1;
+                    current = current.add(1);
+                }
+
+                // Copy the string
+                let slice = std::slice::from_raw_parts(ptr as *const u16, len);
+                let os_string = OsString::from_wide(slice);
+                let text = os_string.to_string_lossy().to_string();
+
+                // Unlock the memory
+                GlobalUnlock(hmem as *mut _);
+
+                Ok(Some(text))
+            })();
+
+            CloseClipboard();
+            result
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let output = Command::new("pbpaste")
+            .output()
+            .map_err(|e| format!("Failed to read clipboard: {}", e))?;
+        
+        if output.stdout.is_empty() {
+            Ok(None)
+        } else {
+            String::from_utf8(output.stdout)
+                .map(Some)
+                .map_err(|e| format!("Failed to decode clipboard text: {}", e))
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let output = Command::new("xclip")
+            .arg("-selection")
+            .arg("clipboard")
+            .arg("-o")
+            .output()
+            .map_err(|e| format!("Failed to read clipboard: {}", e))?;
+        
+        if output.stdout.is_empty() {
+            Ok(None)
+        } else {
+            String::from_utf8(output.stdout)
+                .map(Some)
+                .map_err(|e| format!("Failed to decode clipboard text: {}", e))
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Clipboard text reading is not supported on this platform".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn launch_file(path: String, app: tauri::AppHandle) -> Result<(), String> {
     // Add to history when launched
     let app_data_dir = get_app_data_dir(&app)?;

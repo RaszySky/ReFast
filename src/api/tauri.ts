@@ -102,6 +102,10 @@ export const tauriApi = {
     return invoke("get_clipboard_file_path");
   },
 
+  async getClipboardText(): Promise<string | null> {
+    return invoke("get_clipboard_text");
+  },
+
   async searchEverything(query: string): Promise<EverythingSearchResponse> {
     return invoke("search_everything", { query });
   },

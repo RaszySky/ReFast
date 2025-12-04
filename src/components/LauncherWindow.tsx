@@ -53,6 +53,8 @@ export function LauncherWindow() {
     model: "llama2",
     base_url: "http://localhost:11434",
   });
+  // 剪切板 URL 弹窗
+  const [clipboardUrlToOpen, setClipboardUrlToOpen] = useState<string | null>(null);
   const [detectedUrls, setDetectedUrls] = useState<string[]>([]);
   const [detectedJson, setDetectedJson] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
@@ -547,6 +549,93 @@ export function LauncherWindow() {
     .filter((url): url is string => url !== null && url.length > 0) // Remove nulls and empty strings
     .filter((url, index, self) => self.indexOf(url) === index); // Remove duplicates
   };
+
+  // 确认打开剪切板 URL
+  const handleConfirmOpenClipboardUrl = async () => {
+    if (!clipboardUrlToOpen) return;
+    try {
+      await tauriApi.openUrl(clipboardUrlToOpen);
+      await tauriApi.hideLauncher();
+      setQuery("");
+      setSelectedIndex(0);
+    } catch (error) {
+      console.error("Failed to open clipboard URL:", error);
+      alert("打开链接失败，请稍后重试");
+    } finally {
+      setClipboardUrlToOpen(null);
+    }
+  };
+
+  const handleCancelOpenClipboardUrl = () => {
+    setClipboardUrlToOpen(null);
+  };
+
+  // Check clipboard for URL when window becomes visible
+  useEffect(() => {
+    const window = getCurrentWindow();
+    let lastVisibilityState = false;
+    let hasCheckedClipboard = false; // Track if we've checked clipboard for this visibility session
+
+    const checkClipboardForUrl = async () => {
+      try {
+        const isVisible = await window.isVisible();
+        
+        // Only check when window becomes visible (transition from hidden to visible)
+        if (isVisible && !lastVisibilityState && !hasCheckedClipboard) {
+          hasCheckedClipboard = true;
+          
+          try {
+            const clipboardText = await tauriApi.getClipboardText();
+            if (clipboardText && clipboardText.trim()) {
+              // Extract URLs from clipboard text
+              const urls = extractUrls(clipboardText.trim());
+              if (urls.length > 0) {
+                // Use the first URL found (已标准化)
+                const url = urls[0];
+                // 显示自定义弹窗，由用户选择是否打开
+                setClipboardUrlToOpen(url);
+              }
+            }
+          } catch (error) {
+            // Silently fail - clipboard might not be accessible or might not contain text
+            console.log("Failed to check clipboard:", error);
+          }
+        }
+        
+        // Reset check flag when window becomes hidden
+        if (!isVisible && lastVisibilityState) {
+          hasCheckedClipboard = false;
+        }
+        
+        lastVisibilityState = isVisible;
+      } catch (error) {
+        // Ignore errors
+        console.log("Error checking window visibility:", error);
+      }
+    };
+
+    // Check periodically
+    const checkInterval = setInterval(checkClipboardForUrl, 300);
+    
+    // Also check immediately on mount
+    checkClipboardForUrl();
+
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, []);
+
+  // 当显示剪切板 URL 弹窗时，适当增大主窗口高度，避免弹窗被裁剪
+  useEffect(() => {
+    if (!clipboardUrlToOpen) return;
+
+    const window = getCurrentWindow();
+    // 适当增大高度（如果当前高度不足），这里直接设置一个偏大的固定高度
+    const targetWidth = windowWidth;
+    const targetHeight = 360; // 足够容纳弹窗
+
+    window.setSize(new LogicalSize(targetWidth, targetHeight)).catch(console.error);
+  }, [clipboardUrlToOpen, windowWidth]);
 
   // Check if text is valid JSON
   const isValidJson = (text: string): boolean => {
@@ -2186,6 +2275,11 @@ export function LauncherWindow() {
         return;
       } else if (result.type === "url" && result.url) {
         await tauriApi.openUrl(result.url);
+        // 打开链接后隐藏启动器
+        await tauriApi.hideLauncher();
+        setQuery("");
+        setSelectedIndex(0);
+        return;
       } else if (result.type === "json_formatter" && result.jsonContent) {
         // 打开 JSON 格式化窗口并传递 JSON 内容
         await tauriApi.showJsonFormatterWindow();
@@ -3988,6 +4082,37 @@ export function LauncherWindow() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Clipboard URL Modal */}
+      {clipboardUrlToOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[calc(100vh-32px)] flex flex-col overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">检测到剪切板中的链接</div>
+            </div>
+            <div className="px-5 py-3">
+              <div className="text-sm text-gray-800 break-all bg-gray-50 rounded-md px-3 py-2 border border-gray-100 max-h-40 overflow-y-auto">
+                {clipboardUrlToOpen}
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3 bg-gray-50 flex-shrink-0">
+              <div className="text-sm text-gray-600">是否打开此链接？</div>
+              <button
+                onClick={handleCancelOpenClipboardUrl}
+                className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmOpenClipboardUrl}
+                className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors"
+              >
+                打开链接
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -539,6 +539,7 @@ fn main() {
             launch_file,
             check_path_exists,
             get_clipboard_file_path,
+            get_clipboard_text,
             reveal_in_folder,
             get_all_shortcuts,
             add_shortcut,
