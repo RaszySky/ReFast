@@ -1,0 +1,10 @@
+{
+  "id": "calculator_pad",
+  "name": "计算稿纸",
+  "version": "1.0.0",
+  "description": "多行记录：像写草稿一样写多行算式",
+  "keywords": ["计算", "稿纸", "算式", "计算器", "calculator", "pad"],
+  "entry": "./index.ts",
+  "enabled": true
+}
+
