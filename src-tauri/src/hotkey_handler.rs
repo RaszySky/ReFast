@@ -112,11 +112,7 @@ pub mod windows {
     
     macro_rules! log_hotkey {
         ($($arg:tt)*) => {
-            {
-                let msg = format!($($arg)*);
-                eprintln!("{}", msg);
-                write_log_to_file(&msg);
-            }
+            // 日志已禁用
         };
     }
     

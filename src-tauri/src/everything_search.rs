@@ -203,17 +203,8 @@ pub mod windows {
                     .open(&log_path)
                     .ok();
 
-                if file.is_some() {
-                    eprintln!("========================================");
-                    eprintln!("[DEBUG] Everything IPC log file created:");
-                    eprintln!("[DEBUG] {}", log_path.display());
-                    eprintln!("========================================");
-                } else {
-                    eprintln!(
-                        "[DEBUG] ERROR: Failed to create log file at {}",
-                        log_path.display()
-                    );
-                }
+                // 日志输出已禁用
+                let _ = file;
 
                 Arc::new(Mutex::new(LogFileState {
                     file,
@@ -246,13 +237,7 @@ pub mod windows {
             let log_dir = get_log_dir();
             
             // 确保日志目录存在
-            if let Err(e) = std::fs::create_dir_all(&log_dir) {
-                eprintln!(
-                    "[DEBUG] ERROR: Failed to create log directory {}: {}",
-                    log_dir.display(),
-                    e
-                );
-            }
+            let _ = std::fs::create_dir_all(&log_dir);
             
             let log_path = log_dir.join(format!("everything-ipc-{}.log", today));
             let file = OpenOptions::new()
@@ -261,12 +246,8 @@ pub mod windows {
                 .open(&log_path)
                 .ok();
 
-            if file.is_some() {
-                eprintln!("========================================");
-                eprintln!("[DEBUG] New day detected, switching to new log file:");
-                eprintln!("[DEBUG] {}", log_path.display());
-                eprintln!("========================================");
-            }
+            // 日志输出已禁用
+            let _ = file;
 
             // 更新状态
             state_guard.file = file;
@@ -286,13 +267,7 @@ pub mod windows {
         // 强制初始化日志文件
         let _ = get_log_file_state();
 
-        // 显示当前日志文件路径
-        if let Some(path) = get_log_file_path() {
-            eprintln!("========================================");
-            eprintln!("[DEBUG] Everything IPC log file:");
-            eprintln!("[DEBUG] {}", path.display());
-            eprintln!("========================================");
-        }
+        // 日志输出已禁用
     }
 
     /// 内部函数：写入日志到文件
@@ -316,13 +291,7 @@ pub mod windows {
     /// 日志宏，支持格式化字符串，同时输出到控制台和日志文件
     macro_rules! log_debug {
         ($($arg:tt)*) => {
-            {
-                let msg = format!($($arg)*);
-                // 输出到控制台
-                eprintln!("{}", msg);
-                // 输出到日志文件
-                write_log_to_file(&msg);
-            }
+            // 日志已禁用
         };
     }
 
@@ -437,12 +406,12 @@ pub mod windows {
 
     impl EverythingIpcHandle {
         fn new() -> Result<Self, EverythingError> {
-            eprintln!("[DEBUG] EverythingIpcHandle::new called");
+            // 日志输出已禁用
 
             // 确保窗口类已注册
             static INIT_ONCE: std::sync::Once = std::sync::Once::new();
             INIT_ONCE.call_once(|| {
-                eprintln!("[DEBUG] Registering window class for IPC");
+                // 日志输出已禁用
                 unsafe {
                     let class_name = wide_string("ReFastEverythingIPC");
                     let wc = WNDCLASSW {
@@ -458,29 +427,19 @@ pub mod windows {
                         lpszClassName: class_name.as_ptr(),
                     };
                     let atom = RegisterClassW(&wc);
-                    if atom == 0 {
-                        let last_error = windows_sys::Win32::Foundation::GetLastError();
-                        eprintln!(
-                            "[DEBUG] WARNING: RegisterClassW returned 0, error: {}",
-                            last_error
-                        );
-                    } else {
-                        eprintln!(
-                            "[DEBUG] Window class registered successfully, atom: {}",
-                            atom
-                        );
-                    }
+                    // 日志输出已禁用
+                    let _ = atom;
                 }
             });
 
             // 创建通道用于接收搜索结果
             let (sender, receiver) = mpsc::channel();
-            eprintln!("[DEBUG] Created mpsc channel");
+            // 日志输出已禁用
 
             // 创建消息窗口
             unsafe {
                 let class_name = wide_string("ReFastEverythingIPC");
-                eprintln!("[DEBUG] Creating message window...");
+                // 日志输出已禁用
                 let hwnd = CreateWindowExW(
                     0,
                     class_name.as_ptr(),
@@ -498,25 +457,21 @@ pub mod windows {
 
                 if hwnd == 0 {
                     let last_error = windows_sys::Win32::Foundation::GetLastError();
-                    eprintln!(
-                        "[DEBUG] ERROR: CreateWindowExW returned 0, error: {}",
-                        last_error
-                    );
                     return Err(EverythingError::IpcFailed(format!(
                         "无法创建消息窗口, error: {}",
                         last_error
                     )));
                 }
 
-                eprintln!("[DEBUG] Message window created: {:?}", hwnd);
+                // 日志输出已禁用
 
                 // 注册发送器
                 let senders = get_window_senders();
                 if let Ok(mut senders_guard) = senders.lock() {
                     senders_guard.insert(hwnd, sender);
-                    eprintln!("[DEBUG] Sender registered for hwnd: {:?}", hwnd);
+                    // 日志输出已禁用
                 } else {
-                    eprintln!("[DEBUG] ERROR: Failed to lock senders mutex");
+                    // 日志输出已禁用
                 }
 
                 Ok(EverythingIpcHandle {
@@ -1009,8 +964,8 @@ pub mod windows {
                     None
                 }
             }
-            Err(e) => {
-                eprintln!("[DEBUG] Failed to execute PowerShell: {}", e);
+            Err(_e) => {
+                // 日志输出已禁用
                 None
             }
         }
@@ -1150,8 +1105,7 @@ pub mod windows {
                     // 记录重要消息
                     if msg.message == WM_COPYDATA {
                         wm_copydata_count += 1;
-                        eprintln!("[DEBUG] pump_messages: Received WM_COPYDATA #{} in pump loop, hwnd: {:?}", 
-                            wm_copydata_count, msg.hwnd);
+                        // 日志输出已禁用
                     }
                     // 只记录重要消息，减少日志噪音
                     // else if msg.message != WM_TIMER && msg.message != WM_PAINT {
@@ -1170,18 +1124,12 @@ pub mod windows {
 
                     // 只在处理 WM_COPYDATA 时输出详细日志
                     if msg.message == WM_COPYDATA {
-                        eprintln!(
-                            "[DEBUG] pump_messages: Dispatching WM_COPYDATA to hwnd {:?}",
-                            msg.hwnd
-                        );
+                        // 日志输出已禁用
                     }
                     TranslateMessage(&msg);
-                    let result = DispatchMessageW(&msg);
+                    let _result = DispatchMessageW(&msg);
                     if msg.message == WM_COPYDATA {
-                        eprintln!(
-                            "[DEBUG] pump_messages: DispatchMessageW returned: {}",
-                            result
-                        );
+                        // 日志输出已禁用
                     }
                 } else {
                     // 没有消息，短暂休眠（减少休眠时间以提高响应性）
@@ -1192,8 +1140,8 @@ pub mod windows {
 
         // 只在收到 WM_COPYDATA 时才输出完成日志
         if wm_copydata_count > 0 {
-            eprintln!("[DEBUG] pump_messages completed: processed {} messages ({} WM_COPYDATA), elapsed: {:?}", 
-                message_count, wm_copydata_count, start.elapsed());
+            // 日志输出已禁用
+            let _ = (message_count, wm_copydata_count, start.elapsed());
         }
         true
     }
