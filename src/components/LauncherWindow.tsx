@@ -2878,6 +2878,7 @@ export function LauncherWindow() {
           </div>
 
           {/* Results List or AI Answer */}
+          <div className="flex-1 flex flex-col min-h-0">
           {showAiAnswer ? (
             // AI 回答模式
             <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: '500px' }}>
@@ -3430,14 +3431,14 @@ export function LauncherWindow() {
 
           {/* Loading or Empty State */}
           {!showAiAnswer && isLoading && (
-            <div className="px-6 py-8 text-center text-gray-500">
+            <div className="px-6 py-8 text-center text-gray-500 flex-1 flex flex-col items-center justify-center">
               <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400 mb-2"></div>
               <div>正在扫描应用...</div>
             </div>
           )}
 
           {!showAiAnswer && !isLoading && results.length === 0 && query && (
-            <div className="px-6 py-8 text-center text-gray-500">
+            <div className="px-6 py-8 text-center text-gray-500 flex-1 flex items-center justify-center">
               未找到匹配的应用或文件
             </div>
           )}
@@ -3501,10 +3502,11 @@ export function LauncherWindow() {
           )}
 
           {!showAiAnswer && !isLoading && results.length === 0 && !query && (
-            <div className="px-6 py-8 text-center text-gray-400 text-sm">
+            <div className="px-6 py-8 text-center text-gray-400 text-sm flex-1 flex items-center justify-center">
               输入关键词搜索应用，或粘贴文件路径
             </div>
           )}
+          </div>
 
           {/* Footer */}
           <div className="px-6 py-2 border-t border-gray-100 text-xs text-gray-400 flex justify-between items-center bg-gray-50/50 flex-shrink-0 gap-2 min-w-0">
