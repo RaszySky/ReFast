@@ -16,10 +16,12 @@
 
 ## 技术栈
 
-- **框架**: Tauri 2.x
+- **框架**: Tauri 2.x (支持跨平台，但当前项目主要适配 Windows)
 - **前端**: React + TypeScript + Tailwind CSS
 - **后端**: Rust
-- **平台**: Windows
+- **平台**: Windows 10/11
+
+> **注意**: 由于作者精力有限，目前主要适配 Windows 平台。虽然 Tauri 框架本身支持 macOS 和 Linux，但项目中的部分功能（如 Everything 搜索、Windows 系统文件夹搜索等）是 Windows 特定的。欢迎社区贡献跨平台实现！
 
 ## 项目结构
 
