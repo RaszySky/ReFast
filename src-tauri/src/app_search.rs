@@ -81,6 +81,17 @@ pub mod windows {
                 .map(|p| PathBuf::from(p).join("Microsoft/Windows/Start Menu/Programs")),
         ];
 
+        // Desktop paths - scan user desktop and public desktop
+        let desktop_paths = vec![
+            env::var("USERPROFILE")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Desktop")),
+            env::var("PUBLIC")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Desktop")),
+        ];
+
+        // Scan start menu paths
         for start_menu_path in start_menu_paths.into_iter().flatten() {
             if start_menu_path.exists() {
                 // Start scanning from depth 0, limit to 3 levels for better coverage
@@ -92,6 +103,20 @@ pub mod windows {
                 }
             } else {
                 eprintln!("[DEBUG] Path does not exist: {:?}", start_menu_path);
+            }
+        }
+
+        // Scan desktop paths (only scan depth 0 for desktop, no recursion)
+        for desktop_path in desktop_paths.into_iter().flatten() {
+            if desktop_path.exists() {
+                if let Err(e) = scan_directory(&desktop_path, &mut apps, 0) {
+                    eprintln!("[DEBUG] Error scanning desktop {:?}: {}", desktop_path, e);
+                    // Continue on error
+                } else {
+                    eprintln!("[DEBUG] Scanned desktop {:?}, found {} apps so far", desktop_path, apps.len());
+                }
+            } else {
+                eprintln!("[DEBUG] Desktop path does not exist: {:?}", desktop_path);
             }
         }
 
