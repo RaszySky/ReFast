@@ -242,7 +242,7 @@ export function AboutSettingsPage({}: AboutSettingsProps) {
         <div className="space-y-6">
           <div className="text-center">
             <div className="text-4xl font-bold text-blue-600 mb-2">ReFast</div>
-            <p className="text-gray-600 mb-4">一个快速启动器和输入宏录制工具</p>
+            <p className="text-gray-600 mb-4">一个快速启动器</p>
             <div className="text-sm text-gray-500">
               版本: <span className="font-semibold text-gray-700">{version}</span>
             </div>
@@ -253,7 +253,7 @@ export function AboutSettingsPage({}: AboutSettingsProps) {
               <div>
                 <h3 className="text-sm font-medium text-gray-700 mb-2">项目信息</h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  ReFast 是一个基于 Tauri 2 开发的 Windows 快速启动器，提供快速应用启动、文件搜索、宏录制等功能。
+                  ReFast 是一个基于 Tauri 2 开发的 Windows 快速启动器，提供快速应用启动、文件搜索等功能。
                 </p>
               </div>
 
