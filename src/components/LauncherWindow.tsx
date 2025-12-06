@@ -3178,6 +3178,10 @@ export function LauncherWindow() {
                 onMouseDown={(e) => {
                   // Prevent dragging when clicking on input
                   e.stopPropagation();
+                  // Close context menu when clicking on search input
+                  if (contextMenu) {
+                    setContextMenu(null);
+                  }
                 }}
               />
               {/* 应用中心按钮 */}
