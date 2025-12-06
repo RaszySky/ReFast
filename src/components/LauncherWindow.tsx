@@ -77,7 +77,7 @@ export function LauncherWindow() {
     if (cached === "soft" || cached === "skeuomorphic" || cached === "compact") {
       return cached;
     }
-    return "compact";
+    return "skeuomorphic";
   });
   const [windowWidth, setWindowWidth] = useState<number>(() => {
     // 从本地存储读取保存的宽度，默认600
@@ -282,7 +282,7 @@ export function LauncherWindow() {
             ? styleFromSettings
             : styleFromCache && ["compact", "soft", "skeuomorphic"].includes(styleFromCache)
             ? (styleFromCache as ResultStyle)
-            : "compact";
+            : "skeuomorphic";
         setResultStyle(fallback);
         localStorage.setItem("result-style", fallback);
       } catch (error) {
@@ -896,15 +896,17 @@ export function LauncherWindow() {
   const layout = useMemo(() => {
     if (resultStyle === "skeuomorphic") {
       return {
-        container: "flex flex-col rounded-lg shadow-xl border border-[#e2e8f1] bg-gradient-to-b from-[#f9fbfe] to-[#f3f6fb]",
-        header: "px-6 py-4 border-b border-[#e5ebf4] flex-shrink-0",
-        searchIcon: "w-5 h-5 text-[#99a8c3]",
-        input: "flex-1 text-lg border-none outline-none bg-transparent placeholder-[#9aa6bc] text-[#24314a]",
-        pluginIcon: (hovering: boolean) => `w-5 h-5 transition-all ${hovering ? "text-[#4a6aa1] opacity-100" : "text-[#99a8c3] opacity-80"}`,
+        wrapperBg: "linear-gradient(145deg, #eef2f8 0%, #e2e8f3 50%, #f6f8fc 100%)",
+        container: "flex flex-col rounded-2xl shadow-[0_18px_48px_rgba(24,38,62,0.18)] border border-[#c8d5eb] ring-1 ring-[#d7e2f2]/80 bg-gradient-to-b from-[#f8fbff] via-[#eef3fb] to-[#e1e9f5]",
+        header: "px-6 py-4 border-b border-[#dfe6f2] bg-gradient-to-r from-[#f4f7fc] via-[#eef3fb] to-[#f9fbfe] flex-shrink-0 rounded-t-2xl",
+        searchIcon: "w-5 h-5 text-[#6f84aa]",
+        input: "flex-1 text-lg border-none outline-none bg-transparent placeholder-[#95a6c2] text-[#1f2a44]",
+        pluginIcon: (hovering: boolean) => `w-5 h-5 transition-all ${hovering ? "text-[#4468a2] opacity-100 drop-shadow-[0_2px_6px_rgba(68,104,162,0.35)]" : "text-[#7f93b3] opacity-85"}`,
       };
     }
     if (resultStyle === "soft") {
       return {
+        wrapperBg: "transparent",
         container: "bg-white flex flex-col rounded-lg shadow-xl",
         header: "px-6 py-4 border-b border-gray-100 flex-shrink-0",
         searchIcon: "w-5 h-5 text-gray-400",
@@ -913,6 +915,7 @@ export function LauncherWindow() {
       };
     }
     return {
+      wrapperBg: "transparent",
       container: "bg-white flex flex-col rounded-lg shadow-xl",
       header: "px-6 py-4 border-b border-gray-100 flex-shrink-0",
       searchIcon: "w-5 h-5 text-gray-400",
@@ -3098,7 +3101,7 @@ export function LauncherWindow() {
     <div 
       className="flex flex-col w-full items-center justify-start"
       style={{ 
-        backgroundColor: 'transparent',
+        background: layout.wrapperBg,
         margin: 0,
         padding: 0,
         width: '100%',

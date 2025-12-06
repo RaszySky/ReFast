@@ -74,7 +74,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
       base_url: "http://localhost:11434",
     },
     startup_enabled: false,
-    result_style: "compact",
+    result_style: "skeuomorphic",
   });
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -114,7 +114,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
       setSettings({
         ...data,
         startup_enabled: startupEnabled,
-        result_style: data.result_style || (localStorage.getItem("result-style") as Settings["result_style"]) || "compact",
+        result_style: data.result_style || (localStorage.getItem("result-style") as Settings["result_style"]) || "skeuomorphic",
       });
     } catch (error) {
       console.error("Failed to load settings:", error);
