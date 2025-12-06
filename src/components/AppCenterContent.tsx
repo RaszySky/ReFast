@@ -99,6 +99,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
   const [restoringBackup, setRestoringBackup] = useState<string | null>(null);
   const [deletingBackup, setDeletingBackup] = useState<string | null>(null);
   const [restoreConfirmPath, setRestoreConfirmPath] = useState<string | null>(null);
+  const [deleteBackupConfirmPath, setDeleteBackupConfirmPath] = useState<string | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [pendingDeleteCount, setPendingDeleteCount] = useState(0);
   
@@ -119,6 +120,8 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const hasLoadedSettingsRef = useRef(false);
+  // 标记当前是否正在应用后端加载的设置，避免立即触发自动保存
+  const isApplyingSettingsRef = useRef(false);
   const saveTimerRef = useRef<number | null>(null);
 
   const formatTimestamp = (timestamp?: number | null) => {
@@ -419,6 +422,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
   const loadSettings = async () => {
     try {
       setIsLoadingSettings(true);
+      isApplyingSettingsRef.current = true;
       const data = await tauriApi.getSettings();
       // 同步开机启动状态
       const startupEnabled = await tauriApi.isStartupEnabled();
@@ -431,6 +435,10 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
     } catch (error) {
       console.error("Failed to load settings:", error);
     } finally {
+      // 延迟清除标记，确保这轮由加载触发的设置变更不会被自动保存
+      setTimeout(() => {
+        isApplyingSettingsRef.current = false;
+      }, 0);
       setIsLoadingSettings(false);
     }
   };
@@ -466,6 +474,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
   // 设置变更自动保存（防抖处理）
   useEffect(() => {
     if (isLoadingSettings) return;
+    if (isApplyingSettingsRef.current) return;
 
     if (!hasLoadedSettingsRef.current) {
       hasLoadedSettingsRef.current = true;
