@@ -186,6 +186,33 @@ export function createBuiltinPlugins(): Plugin[] {
         }
       },
     },
+    {
+      id: "everything_search",
+      name: "Everything 文件搜索",
+      description: "使用 Everything 进行快速文件搜索",
+      keywords: [
+        "everything",
+        "文件搜索",
+        "文件",
+        "搜索",
+        "wenjiansousuo",
+        "wjss",
+        "wenjian",
+        "wj",
+        "sousuo",
+        "ss",
+        "everything搜索",
+        "everything文件搜索",
+      ],
+      execute: async (context) => {
+        // 打开独立的 Everything 搜索窗口
+        if (context.tauriApi) {
+          await context.tauriApi.showEverythingSearchWindow();
+          // 关闭启动器
+          await context.hideLauncher();
+        }
+      },
+    },
   ];
 }
 

@@ -11,6 +11,7 @@ import JsonFormatterApp from "./JsonFormatterApp";
 import FileToolboxApp from "./FileToolboxApp";
 import HotkeySettingsApp from "./HotkeySettingsApp";
 import CalculatorPadApp from "./CalculatorPadApp";
+import EverythingSearchApp from "./EverythingSearchApp";
 import { initializePlugins } from "./plugins";
 import "./styles.css";
 
@@ -115,6 +116,13 @@ async function initApp() {
         </StrictMode>
       );
       console.log("[初始化] CalculatorPadApp 已渲染");
+    } else if (label === "everything-search-window") {
+      ReactDOM.createRoot(root).render(
+        <StrictMode>
+          <EverythingSearchApp />
+        </StrictMode>
+      );
+      console.log("[初始化] EverythingSearchApp 已渲染");
     } else {
       ReactDOM.createRoot(root).render(
         <StrictMode>

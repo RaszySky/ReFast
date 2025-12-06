@@ -95,6 +95,7 @@ export class PluginRegistry {
       show_plugin_list: "plugins/builtin/show_plugin_list",
       json_formatter: "plugins/builtin/json_formatter",
       calculator_pad: "plugins/builtin/calculator_pad",
+      everything_search: "plugins/builtin/everything_search",
     };
     return pathMap[pluginId] || null;
   }

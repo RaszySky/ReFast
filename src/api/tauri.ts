@@ -238,6 +238,10 @@ export const tauriApi = {
     return invoke("show_calculator_pad_window");
   },
 
+  async showEverythingSearchWindow(): Promise<void> {
+    return invoke("show_everything_search_window");
+  },
+
   async previewFileReplace(params: {
     folderPath: string;
     searchText: string;
