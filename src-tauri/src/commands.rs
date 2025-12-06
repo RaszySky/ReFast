@@ -1776,9 +1776,9 @@ pub async fn show_plugin_list_window(app: tauri::AppHandle) -> Result<(), String
             tauri::WebviewUrl::App("index.html".into()),
         )
         .title("应用中心")
-        .inner_size(700.0, 600.0)
+        .inner_size(1000.0, 700.0)
         .resizable(true)
-        .min_inner_size(500.0, 400.0)
+        .min_inner_size(700.0, 500.0)
         .center()
         .build()
         .map_err(|e| format!("创建应用中心窗口失败: {}", e))?;
@@ -1863,6 +1863,33 @@ pub async fn show_calculator_pad_window(app: tauri::AppHandle) -> Result<(), Str
         .center()
         .build()
         .map_err(|e| format!("创建计算稿纸窗口失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn show_everything_search_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    // 尝试获取现有窗口
+    if let Some(window) = app.get_webview_window("everything-search-window") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        // 动态创建窗口
+        let window = tauri::WebviewWindowBuilder::new(
+            &app,
+            "everything-search-window",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("Everything 文件搜索")
+        .inner_size(900.0, 700.0)
+        .resizable(true)
+        .min_inner_size(600.0, 500.0)
+        .center()
+        .build()
+        .map_err(|e| format!("创建 Everything 搜索窗口失败: {}", e))?;
     }
 
     Ok(())
