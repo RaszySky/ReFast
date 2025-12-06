@@ -461,8 +461,8 @@ export function LauncherWindow() {
     // Use document with capture phase to catch Esc key early
     document.addEventListener("keydown", handleGlobalKeyDown, true);
     
-    // Focus input when window gains focus
-    const unlistenFocus = window.onFocusChanged(({ payload: focused }) => {
+    // Focus input when window gains focus, hide when loses focus
+    const unlistenFocus = window.onFocusChanged(async ({ payload: focused }) => {
       if (focused && inputRef.current) {
         setTimeout(() => {
           inputRef.current?.focus();
@@ -471,6 +471,43 @@ export function LauncherWindow() {
             inputRef.current.select();
           }
         }, 100);
+      } else if (!focused) {
+        // 当窗口失去焦点时，自动关闭搜索框
+        // 如果插件列表弹窗已打开，关闭插件列表并隐藏窗口
+        if (isPluginListModalOpenRef.current) {
+          setIsPluginListModalOpen(false);
+          setTimeout(async () => {
+            try {
+              await tauriApi.hideLauncher();
+            } catch (error) {
+              console.error("Failed to hide window:", error);
+            }
+          }, 100);
+          return;
+        }
+        // 如果备忘录弹窗已打开，关闭备忘录并隐藏窗口
+        if (isMemoModalOpenRef.current) {
+          resetMemoState();
+          setTimeout(async () => {
+            try {
+              await tauriApi.hideLauncher();
+            } catch (error) {
+              console.error("Failed to hide window:", error);
+            }
+          }, 100);
+          return;
+        }
+        // 隐藏窗口并重置所有状态
+        try {
+          await tauriApi.hideLauncher();
+          setQuery("");
+          setSelectedIndex(0);
+          setShowAiAnswer(false);
+          setAiAnswer(null);
+          resetMemoState();
+        } catch (error) {
+          console.error("Failed to hide window:", error);
+        }
       }
     });
 
