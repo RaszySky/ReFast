@@ -71,6 +71,10 @@ export const tauriApi = {
     return invoke("launch_application", { app });
   },
 
+  async debugAppIcon(appName: string): Promise<string> {
+    return invoke("debug_app_icon", { appName });
+  },
+
   async toggleLauncher(): Promise<void> {
     return invoke("toggle_launcher");
   },

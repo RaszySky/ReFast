@@ -670,6 +670,75 @@ pub fn launch_application(app: app_search::AppInfo) -> Result<(), String> {
     app_search::windows::launch_app(&app)
 }
 
+/// 调试命令：查找指定名称的应用并尝试提取图标，返回详细信息
+#[tauri::command]
+pub fn debug_app_icon(app_name: String, app: tauri::AppHandle) -> Result<String, String> {
+    use std::path::Path;
+    
+    let cache = APP_CACHE.clone();
+    let cache_guard = cache.lock().map_err(|e| e.to_string())?;
+    
+    let apps = cache_guard
+        .as_ref()
+        .ok_or_else(|| "Applications not scanned yet. Call scan_applications first.".to_string())?;
+    
+    // 查找匹配的应用（不区分大小写）
+    let matched_apps: Vec<_> = apps
+        .iter()
+        .filter(|a| a.name.to_lowercase().contains(&app_name.to_lowercase()))
+        .collect();
+    
+    if matched_apps.is_empty() {
+        return Err(format!("未找到名称包含 '{}' 的应用", app_name));
+    }
+    
+    let mut result = String::new();
+    result.push_str(&format!("找到 {} 个匹配的应用:\n\n", matched_apps.len()));
+    
+    for (idx, app_info) in matched_apps.iter().enumerate() {
+        result.push_str(&format!("[{}/{}] {}\n", idx + 1, matched_apps.len(), app_info.name));
+        result.push_str(&format!("  路径: {}\n", app_info.path));
+        result.push_str(&format!("  图标状态: {}\n", 
+            if app_info.icon.is_some() { "已缓存" } else { "未提取" }));
+        
+        let path = Path::new(&app_info.path);
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase());
+        
+        result.push_str(&format!("  文件扩展名: {}\n", 
+            ext.as_ref().map(|s| s.as_str()).unwrap_or("无")));
+        
+        // 尝试提取图标
+        if app_info.icon.is_none() {
+            result.push_str("  正在尝试提取图标...\n");
+            let icon_result = if ext == Some("lnk".to_string()) {
+                app_search::windows::extract_lnk_icon_base64(path)
+            } else if ext == Some("exe".to_string()) {
+                app_search::windows::extract_icon_base64(path)
+            } else {
+                None
+            };
+            
+            if let Some(icon) = icon_result {
+                result.push_str("  ✓ 图标提取成功！\n");
+                result.push_str(&format!("  图标数据长度: {} 字节\n", icon.len()));
+            } else {
+                result.push_str("  ✗ 图标提取失败\n");
+                result.push_str("  请查看控制台日志获取详细错误信息\n");
+            }
+        } else {
+            result.push_str(&format!("  已缓存图标数据长度: {} 字节\n", 
+                app_info.icon.as_ref().unwrap().len()));
+        }
+        
+        result.push_str("\n");
+    }
+    
+    Ok(result)
+}
+
 /// 设置 launcher 窗口位置（居中但稍微偏上）
 /// 优先使用保存的位置，如果没有保存的位置则计算默认位置
 fn set_launcher_window_position(window: &tauri::WebviewWindow, app_data_dir: &std::path::Path) {

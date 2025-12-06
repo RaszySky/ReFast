@@ -495,6 +495,7 @@ fn main() {
             search_applications,
             populate_app_icons,
             launch_application,
+            debug_app_icon,
             toggle_launcher,
             hide_launcher,
             add_file_to_history,

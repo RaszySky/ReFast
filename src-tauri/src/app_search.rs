@@ -468,6 +468,17 @@ try {
             if !base64.is_empty() && base64.len() > 100 {
                 return Some(format!("data:image/png;base64,{}", base64));
             }
+        } else {
+            // Log error details for debugging
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            eprintln!(
+                "[图标提取失败] .exe 文件: {:?}, 退出码: {:?}, stderr: {}, stdout: {}",
+                file_path,
+                output.status.code(),
+                stderr,
+                stdout
+            );
         }
         None
     }
@@ -599,7 +610,13 @@ public class IconExtractor {
         
         $pngBytes = [IconExtractor]::ExtractIconToPng($iconSourcePath, $iconIndex)
         if ($pngBytes -eq $null) {
-            exit 1
+            # 如果使用指定索引失败，尝试使用索引 0
+            if ($iconIndex -ne 0) {
+                $pngBytes = [IconExtractor]::ExtractIconToPng($iconSourcePath, 0)
+            }
+            if ($pngBytes -eq $null) {
+                exit 1
+            }
         }
         
         [Convert]::ToBase64String($pngBytes)
@@ -644,6 +661,17 @@ public class IconExtractor {
             if !base64.is_empty() && base64.len() > 100 {
                 return Some(format!("data:image/png;base64,{}", base64));
             }
+        } else {
+            // Log error details for debugging
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            eprintln!(
+                "[图标提取失败] .lnk 文件: {:?}, 退出码: {:?}, stderr: {}, stdout: {}",
+                lnk_path,
+                output.status.code(),
+                stderr,
+                stdout
+            );
         }
         None
     }

@@ -3557,6 +3557,27 @@ export function LauncherWindow() {
                             }
                           }}
                         />
+                      ) : result.type === "app" ? (
+                        // 应用类型但没有图标，显示占位图标
+                        <svg
+                          className={`w-5 h-5 ${theme.iconColor(index === selectedIndex, "text-gray-500")}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 6a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 10h8m-8 4h5m-5-7h.01"
+                          />
+                        </svg>
                       ) : result.type === "url" ? (
                         <svg
                           className={`w-5 h-5 ${theme.iconColor(index === selectedIndex, "text-blue-500")}`}
@@ -3680,20 +3701,61 @@ export function LauncherWindow() {
                             d="M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"
                           />
                         </svg>
-                      ) : result.type === "file" || result.type === "everything" || result.type === "system_folder" ? (
-                        <svg
-                          className={`w-5 h-5 ${theme.iconColor(index === selectedIndex, "text-gray-500")}`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                          />
-                        </svg>
+                      ) : (result.type === "file" || result.type === "everything" || result.type === "system_folder") ? (
+                        // 检查是否为 .lnk 或 .exe 文件，如果是，尝试从应用列表中找到对应的应用图标
+                        (() => {
+                          const filePath = result.path || '';
+                          const isLnkOrExe = filePath.toLowerCase().endsWith('.lnk') || filePath.toLowerCase().endsWith('.exe');
+                          if (isLnkOrExe) {
+                            // 尝试在应用列表中查找匹配的应用（通过路径匹配）
+                            const matchedApp = filteredApps.find(app => app.path === filePath);
+                            if (matchedApp && matchedApp.icon) {
+                              return (
+                                <img 
+                                  src={matchedApp.icon} 
+                                  alt={result.displayName}
+                                  className="w-8 h-8 object-contain"
+                                  style={{ imageRendering: 'auto' as const }}
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    const parent = target.parentElement;
+                                    if (parent && !parent.querySelector('svg')) {
+                                      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                                      svg.setAttribute('class', `w-5 h-5 ${index === selectedIndex ? 'text-white' : 'text-gray-500'}`);
+                                      svg.setAttribute('fill', 'none');
+                                      svg.setAttribute('stroke', 'currentColor');
+                                      svg.setAttribute('viewBox', '0 0 24 24');
+                                      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                                      path.setAttribute('stroke-linecap', 'round');
+                                      path.setAttribute('stroke-linejoin', 'round');
+                                      path.setAttribute('stroke-width', '2');
+                                      path.setAttribute('d', 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z');
+                                      svg.appendChild(path);
+                                      parent.appendChild(svg);
+                                    }
+                                  }}
+                                />
+                              );
+                            }
+                          }
+                          // 默认显示文档图标
+                          return (
+                            <svg
+                              className={`w-5 h-5 ${theme.iconColor(index === selectedIndex, "text-gray-500")}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                              />
+                            </svg>
+                          );
+                        })()
                       ) : (
                         <svg
                           className={`w-5 h-5 ${theme.iconColor(index === selectedIndex, "text-gray-500")}`}
@@ -4009,20 +4071,91 @@ export function LauncherWindow() {
             }}
           >
             {hasFileMenu && (
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleRevealInFolder();
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
-              >
-                打开所在文件夹
-              </button>
+              <>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleRevealInFolder();
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
+                >
+                  打开所在文件夹
+                </button>
+                {/* 为应用类型显示调试图标按钮 */}
+                {contextMenu.result.type === "app" && contextMenu.result.app && (
+                  <button
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setContextMenu(null);
+                      try {
+                        const app = contextMenu.result.app!;
+                        const hasIcon = app.icon && app.icon.trim() !== '';
+                        const result = await tauriApi.debugAppIcon(app.name);
+                        console.log('=== 图标调试结果 ===');
+                        console.log('应用名称:', app.name);
+                        console.log('应用路径:', app.path);
+                        console.log('当前图标状态:', hasIcon ? '有图标' : '无图标');
+                        console.log('图标数据长度:', app.icon?.length || 0);
+                        console.log('调试信息:\n', result);
+                        alert(`应用: ${app.name}\n路径: ${app.path}\n图标状态: ${hasIcon ? '有图标' : '无图标'}\n\n${result}`);
+                        // 尝试重新加载应用列表以获取可能的图标更新
+                        await searchApplications(query);
+                      } catch (error: any) {
+                        console.error('调试失败:', error);
+                        alert(`调试失败: ${error?.message || error}`);
+                      }
+                    }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors border-t border-gray-100"
+                  >
+                    调试图标提取
+                  </button>
+                )}
+                {/* 为文件类型（.lnk 或 .exe）也显示调试图标按钮 */}
+                {contextMenu.result.type === "file" && contextMenu.result.file && (() => {
+                  const filePath = contextMenu.result.file.path || '';
+                  const isLnkOrExe = filePath.toLowerCase().endsWith('.lnk') || filePath.toLowerCase().endsWith('.exe');
+                  const fileName = contextMenu.result.file.name || '';
+                  return isLnkOrExe ? (
+                    <button
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu(null);
+                        try {
+                          const result = await tauriApi.debugAppIcon(fileName.replace(/\.(lnk|exe)$/i, ''));
+                          console.log('=== 图标调试结果（文件类型）===');
+                          console.log('文件名称:', fileName);
+                          console.log('文件路径:', filePath);
+                          console.log('调试信息:\n', result);
+                          alert(`文件: ${fileName}\n路径: ${filePath}\n\n${result}`);
+                          // 尝试重新搜索
+                          await searchApplications(query);
+                        } catch (error: any) {
+                          console.error('调试失败:', error);
+                          alert(`调试失败: ${error?.message || error}`);
+                        }
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors border-t border-gray-100"
+                    >
+                      调试图标提取
+                    </button>
+                  ) : null;
+                })()}
+              </>
             )}
             {hasMemoMenu && (
               <>
@@ -4307,32 +4440,14 @@ export function LauncherWindow() {
                           </button>
                           <button
                             onMouseDown={async (e) => {
-                              // #region agent log
-                              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LauncherWindow.tsx:4221',message:'onMouseDown entry',data:{memoId:memo.id,eventType:'mousedown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                              // #endregion
                               e.preventDefault();
                               e.stopPropagation();
-                              // #region agent log
-                              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LauncherWindow.tsx:4224',message:'before confirm',data:{memoId:memo.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                              // #endregion
                               const confirmed = confirm("确定要删除这条备忘录吗？");
-                              // #region agent log
-                              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LauncherWindow.tsx:4225',message:'after confirm',data:{memoId:memo.id,confirmed:confirmed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                              // #endregion
                               if (!confirmed) {
-                                // #region agent log
-                                fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LauncherWindow.tsx:4226',message:'user cancelled',data:{memoId:memo.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                                // #endregion
                                 return;
                               }
-                              // #region agent log
-                              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LauncherWindow.tsx:4227',message:'before deleteMemo call',data:{memoId:memo.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                              // #endregion
                               try {
                                 await tauriApi.deleteMemo(memo.id);
-                                // #region agent log
-                                fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LauncherWindow.tsx:4228',message:'after deleteMemo call',data:{memoId:memo.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                                // #endregion
                                 const list = await tauriApi.getAllMemos();
                                 setMemos(list);
                                 // 如果删除的是当前显示的备忘录，关闭弹窗

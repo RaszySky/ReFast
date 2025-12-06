@@ -598,6 +598,19 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
     setAppIndexSearch("");
   };
 
+  const handleDebugAppIcon = async (appName: string) => {
+    try {
+      const result = await tauriApi.debugAppIcon(appName);
+      // 显示调试结果（可以使用 alert 或者更好的 UI）
+      console.log('=== 图标调试结果 ===');
+      console.log(result);
+      alert(result);
+    } catch (error: any) {
+      console.error('调试失败:', error);
+      alert(`调试失败: ${error?.message || error}`);
+    }
+  };
+
   const filteredAppIndexList = useMemo(() => {
     if (!appIndexSearch.trim()) return appIndexList;
     const query = appIndexSearch.toLowerCase();
@@ -1862,7 +1875,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
               ) : (
                 <div className="divide-y divide-gray-100">
                   {filteredAppIndexList.map((item, idx) => (
-                    <div key={`${item.path}-${idx}`} className="px-6 py-3 flex items-center gap-4 hover:bg-gray-50">
+                    <div key={`${item.path}-${idx}`} className="px-6 py-3 flex items-center gap-4 hover:bg-gray-50 group">
                       <div className="w-6 h-6 rounded bg-green-50 text-green-700 flex items-center justify-center text-xs flex-shrink-0">
                         {idx + 1}
                       </div>
@@ -1871,6 +1884,18 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
                         <div className="text-sm font-medium text-gray-900">{item.name}</div>
                         <div className="text-xs text-gray-500 break-all mt-1">{item.path}</div>
                       </div>
+                      {!item.icon && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDebugAppIcon(item.name);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 transition"
+                          title="调试图标提取"
+                        >
+                          调试图标
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
