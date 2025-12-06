@@ -91,6 +91,8 @@ export function LauncherWindow() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isWindowDraggingRef = useRef(false);
   // 记录最近一次已处理的剪切板 URL，避免同一个链接在一次会话中反复弹窗
   const lastClipboardUrlRef = useRef<string | null>(null);
   // 记录备忘录弹窗是否打开，用于全局 ESC 处理时优先关闭备忘录，而不是隐藏整个窗口
@@ -105,6 +107,8 @@ export function LauncherWindow() {
   const debounceTimeoutRef = useRef<number | null>(null); // 用于跟踪防抖定时器
   const currentLoadResultsRef = useRef<SearchResult[]>([]); // 跟踪当前正在加载的结果，用于验证是否仍有效
 
+  const getMainContainer = () => containerRef.current || (document.querySelector('.bg-white') as HTMLElement | null);
+
   useEffect(() => {
     isMemoModalOpenRef.current = isMemoModalOpen;
   }, [isMemoModalOpen]);
@@ -117,15 +121,51 @@ export function LauncherWindow() {
   // 注意：Windows 11 可能使用系统原生滚动条，webkit-scrollbar 样式可能不生效
   useEffect(() => {
     const styleId = 'custom-scrollbar-style';
-    const scrollbarSize = resultStyle === "soft" ? 20 : 12;
-    const trackBg = resultStyle === "soft" ? "#f0f0f0" : "#f8f9fb";
-    const trackBorder = resultStyle === "soft" ? "#e0e0e0" : "#eceff3";
-    const thumbBg = resultStyle === "soft" ? "#a0a0a0" : "#b6beca";
-    const thumbHover = resultStyle === "soft" ? "#888888" : "#9fa8b7";
-    const thumbActive = resultStyle === "soft" ? "#707070" : "#8893a3";
-    const thumbBorder = resultStyle === "soft" ? 4 : 3;
-    const thumbBorderBg = resultStyle === "soft" ? "#f0f0f0" : "#f8f9fb";
-    const minHeight = resultStyle === "soft" ? 40 : 32;
+    const config = (() => {
+      if (resultStyle === "soft") {
+        return {
+          scrollbarSize: 20,
+          trackBg: "#f0f0f0",
+          trackBorder: "#e0e0e0",
+          thumbBg: "#a0a0a0",
+          thumbHover: "#888888",
+          thumbActive: "#707070",
+          thumbBorder: 4,
+          thumbBorderBg: "#f0f0f0",
+          thumbHoverBorder: "#f0f0f0",
+          thumbActiveBorder: "#f0f0f0",
+          minHeight: 40,
+        };
+      }
+      if (resultStyle === "skeuomorphic") {
+        return {
+          scrollbarSize: 14,
+          trackBg: "#f6f8fb",
+          trackBorder: "#e3e9f1",
+          thumbBg: "#c5d0de",
+          thumbHover: "#b2c1d6",
+          thumbActive: "#9fb0c9",
+          thumbBorder: 3,
+          thumbBorderBg: "#f9fbfe",
+          thumbHoverBorder: "#eef3fa",
+          thumbActiveBorder: "#e3e9f3",
+          minHeight: 34,
+        };
+      }
+      return {
+        scrollbarSize: 12,
+        trackBg: "#f8f9fb",
+        trackBorder: "#eceff3",
+        thumbBg: "#b6beca",
+        thumbHover: "#9fa8b7",
+        thumbActive: "#8893a3",
+        thumbBorder: 3,
+        thumbBorderBg: "#f8f9fb",
+        thumbHoverBorder: "#f1f3f6",
+        thumbActiveBorder: "#e8ecf2",
+        minHeight: 32,
+      };
+    })();
     
     const injectStyle = () => {
       // 如果样式已存在，先移除
@@ -143,8 +183,8 @@ export function LauncherWindow() {
         }
         
         .results-list-scroll::-webkit-scrollbar {
-          width: ${scrollbarSize}px !important;
-          height: ${scrollbarSize}px !important;
+          width: ${config.scrollbarSize}px !important;
+          height: ${config.scrollbarSize}px !important;
           display: block !important;
           -webkit-appearance: none !important;
           background-color: transparent !important;
@@ -157,29 +197,29 @@ export function LauncherWindow() {
         }
         
         .results-list-scroll::-webkit-scrollbar-track {
-          background: ${trackBg} !important;
-          border-left: 1px solid ${trackBorder} !important;
+          background: ${config.trackBg} !important;
+          border-left: 1px solid ${config.trackBorder} !important;
         }
         
         .results-list-scroll::-webkit-scrollbar-thumb {
-          background-color: ${thumbBg} !important;
-          border-radius: ${thumbBorder * 2}px !important;
-          border: ${thumbBorder}px solid ${thumbBorderBg} !important;
+          background-color: ${config.thumbBg} !important;
+          border-radius: ${config.thumbBorder * 2}px !important;
+          border: ${config.thumbBorder}px solid ${config.thumbBorderBg} !important;
           background-clip: content-box !important;
-          min-height: ${minHeight}px !important;
+          min-height: ${config.minHeight}px !important;
           transition: background-color 0.2s ease, box-shadow 0.2s ease !important;
           box-shadow: none !important;
         }
         
         .results-list-scroll::-webkit-scrollbar-thumb:hover {
-          background-color: ${thumbHover} !important;
-          border: ${thumbBorder}px solid ${resultStyle === "soft" ? "#f0f0f0" : "#f1f3f6"} !important;
+          background-color: ${config.thumbHover} !important;
+          border: ${config.thumbBorder}px solid ${config.thumbHoverBorder} !important;
           box-shadow: none !important;
         }
         
         .results-list-scroll::-webkit-scrollbar-thumb:active {
-          background-color: ${thumbActive} !important;
-          border: ${thumbBorder}px solid ${resultStyle === "soft" ? "#f0f0f0" : "#e8ecf2"} !important;
+          background-color: ${config.thumbActive} !important;
+          border: ${config.thumbBorder}px solid ${config.thumbActiveBorder} !important;
           box-shadow: none !important;
         }
       `;
@@ -421,7 +461,7 @@ export function LauncherWindow() {
     
     // Set initial window size to match white container
     const setWindowSize = () => {
-      const whiteContainer = document.querySelector('.bg-white');
+      const whiteContainer = getMainContainer();
       if (whiteContainer) {
         // Use scrollHeight to get the full content height including overflow
         const containerHeight = whiteContainer.scrollHeight;
@@ -489,15 +529,21 @@ export function LauncherWindow() {
     
     // Focus input when window gains focus, hide when loses focus
     const unlistenFocus = window.onFocusChanged(async ({ payload: focused }) => {
-      if (focused && inputRef.current) {
-        setTimeout(() => {
-          inputRef.current?.focus();
-          // Only select text if input is empty
-          if (inputRef.current && !inputRef.current.value) {
-            inputRef.current.select();
-          }
-        }, 100);
+      if (focused) {
+        isWindowDraggingRef.current = false;
+        if (inputRef.current) {
+          setTimeout(() => {
+            inputRef.current?.focus();
+            // Only select text if input is empty
+            if (inputRef.current && !inputRef.current.value) {
+              inputRef.current.select();
+            }
+          }, 100);
+        }
       } else if (!focused) {
+        if (isWindowDraggingRef.current) {
+          return;
+        }
         // 当窗口失去焦点时，自动关闭搜索框
         // 如果应用中心弹窗已打开，关闭应用中心并隐藏窗口
         if (isPluginListModalOpenRef.current) {
@@ -576,6 +622,16 @@ export function LauncherWindow() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleMouseUp = () => {
+      isWindowDraggingRef.current = false;
+    };
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   // Extract URLs from text
   const extractUrls = (text: string): string[] => {
     if (!text || text.trim().length === 0) return [];
@@ -610,6 +666,18 @@ export function LauncherWindow() {
 
   const handleCancelOpenClipboardUrl = () => {
     setClipboardUrlToOpen(null);
+  };
+
+  // 统一处理窗口拖动，避免拖动过程中触发失焦自动关闭
+  const startWindowDragging = async () => {
+    const window = getCurrentWindow();
+    isWindowDraggingRef.current = true;
+    try {
+      await window.startDragging();
+    } catch (error) {
+      isWindowDraggingRef.current = false;
+      console.error("Failed to start dragging:", error);
+    }
   };
 
   // 检测剪切板中的 URL：仅在窗口获得焦点（显示）时检测一次，不做轮询
@@ -744,6 +812,42 @@ export function LauncherWindow() {
           : "bg-gray-100 text-gray-600 border border-gray-200",
     };
 
+    const skeuo = {
+      card: (selected: boolean) =>
+        `group relative mx-2 my-1.5 px-4 py-3 rounded-xl border cursor-pointer transition-all duration-200 ${
+          selected
+            ? "bg-gradient-to-b from-[#f3f6fb] to-[#e1e9f5] text-[#1f2a44] border-[#c6d4e8] shadow-[0_8px_18px_rgba(20,32,50,0.14)] ring-1 ring-[#d7e2f2]/70"
+            : "bg-gradient-to-b from-[#f9fbfe] to-[#f1f5fb] text-[#222b3a] border-[#e2e8f1] shadow-[0_6px_14px_rgba(20,32,50,0.10)] hover:-translate-y-[1px] hover:shadow-[0_9px_18px_rgba(20,32,50,0.14)]"
+        }`,
+      indicator: (selected: boolean) =>
+        `absolute left-0 top-2 bottom-2 w-[3px] rounded-full transition-opacity ${
+          selected ? "bg-[#8fb1e3] opacity-100 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]" : "bg-[#c6d6ed] opacity-0 group-hover:opacity-80"
+        }`,
+      indexBadge: (selected: boolean) =>
+        `text-[11px] font-semibold flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_2px_6px_rgba(20,32,50,0.12)] ${
+          selected
+            ? "bg-gradient-to-b from-[#e5edf9] to-[#d4e1f2] text-[#22365b]"
+            : "bg-gradient-to-b from-[#f1f6fc] to-[#e2eaf6] text-[#2e3f5f]"
+        }`,
+      iconWrap: (selected: boolean) =>
+        `w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 overflow-hidden transition-all duration-200 border ${
+          selected
+            ? "bg-gradient-to-b from-[#edf3fb] to-[#d9e4f5] border-[#c6d4e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_3px_10px_rgba(20,32,50,0.16)]"
+            : "bg-gradient-to-b from-[#fafcfe] to-[#ecf1f8] border-[#e0e7f1] shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_2px_7px_rgba(20,32,50,0.12)]"
+        }`,
+      iconColor: (selected: boolean, defaultColor: string) => (selected ? "text-[#2f4670]" : defaultColor),
+      title: (selected: boolean) => (selected ? "text-[#1f2a44]" : "text-[#222b3a]"),
+      aiText: (selected: boolean) => (selected ? "text-[#2e446a]" : "text-[#3c4c64]"),
+      pathText: (selected: boolean) => (selected ? "text-[#3a5174]" : "text-[#4a5a70]"),
+      metaText: (selected: boolean) => (selected ? "text-[#4a6185]" : "text-[#5a6a80]"),
+      descText: (selected: boolean) => (selected ? "text-[#1f2a44]" : "text-[#3b4b63]"),
+      usageText: (selected: boolean) => (selected ? "text-[#3a5174]" : "text-[#5a6a80]"),
+      tag: (_type: string, selected: boolean) =>
+        selected
+          ? "bg-gradient-to-b from-[#e7eef9] to-[#d7e3f3] text-[#1f2a44] border border-[#c1cfe6] shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_1px_3px_rgba(20,32,50,0.1)]"
+          : "bg-gradient-to-b from-[#f4f7fc] to-[#e9eef7] text-[#2c3a54] border border-[#d7e1ef] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]",
+    };
+
     const soft = {
       card: (selected: boolean) =>
         `group relative mx-2 my-1.5 px-4 py-3 rounded-xl cursor-pointer transition-all duration-200 ${
@@ -785,8 +889,36 @@ export function LauncherWindow() {
     };
 
     if (resultStyle === "soft") return soft;
-    if (resultStyle === "skeuomorphic") return soft; // 预留：后续可替换为拟物配置
+    if (resultStyle === "skeuomorphic") return skeuo;
     return compact;
+  }, [resultStyle]);
+
+  const layout = useMemo(() => {
+    if (resultStyle === "skeuomorphic") {
+      return {
+        container: "flex flex-col rounded-lg shadow-xl border border-[#e2e8f1] bg-gradient-to-b from-[#f9fbfe] to-[#f3f6fb]",
+        header: "px-6 py-4 border-b border-[#e5ebf4] flex-shrink-0",
+        searchIcon: "w-5 h-5 text-[#99a8c3]",
+        input: "flex-1 text-lg border-none outline-none bg-transparent placeholder-[#9aa6bc] text-[#24314a]",
+        pluginIcon: (hovering: boolean) => `w-5 h-5 transition-all ${hovering ? "text-[#4a6aa1] opacity-100" : "text-[#99a8c3] opacity-80"}`,
+      };
+    }
+    if (resultStyle === "soft") {
+      return {
+        container: "bg-white flex flex-col rounded-lg shadow-xl",
+        header: "px-6 py-4 border-b border-gray-100 flex-shrink-0",
+        searchIcon: "w-5 h-5 text-gray-400",
+        input: "flex-1 text-lg border-none outline-none bg-transparent placeholder-gray-400 text-gray-700",
+        pluginIcon: (hovering: boolean) => `w-5 h-5 transition-all ${hovering ? "text-blue-600 opacity-100" : "text-gray-400 opacity-70"}`,
+      };
+    }
+    return {
+      container: "bg-white flex flex-col rounded-lg shadow-xl",
+      header: "px-6 py-4 border-b border-gray-100 flex-shrink-0",
+      searchIcon: "w-5 h-5 text-gray-400",
+      input: "flex-1 text-lg border-none outline-none bg-transparent placeholder-gray-400 text-gray-700",
+      pluginIcon: (hovering: boolean) => `w-5 h-5 transition-all ${hovering ? "text-indigo-600 opacity-100" : "text-gray-400 opacity-70"}`,
+    };
   }, [resultStyle]);
 
   // Call Ollama API to ask AI (流式请求)
@@ -1869,7 +2001,7 @@ export function LauncherWindow() {
     const timeoutId = setTimeout(() => {
       const adjustWindowSize = () => {
         const window = getCurrentWindow();
-        const whiteContainer = document.querySelector('.bg-white');
+        const whiteContainer = getMainContainer();
         if (whiteContainer && !isMemoModalOpen) {
           // Use double requestAnimationFrame to ensure DOM is fully updated
           requestAnimationFrame(() => {
@@ -1905,7 +2037,7 @@ export function LauncherWindow() {
       
       const adjustWindowSize = () => {
         const window = getCurrentWindow();
-        const whiteContainer = document.querySelector('.bg-white');
+      const whiteContainer = getMainContainer();
         if (whiteContainer && !isMemoModalOpen) {
           // Use double requestAnimationFrame to ensure DOM is fully updated
           requestAnimationFrame(() => {
@@ -1951,7 +2083,7 @@ export function LauncherWindow() {
     
     const adjustWindowSize = () => {
       const window = getCurrentWindow();
-      const whiteContainer = document.querySelector('.bg-white');
+      const whiteContainer = getMainContainer();
       if (whiteContainer) {
         let containerHeight = whiteContainer.scrollHeight;
 
@@ -1980,7 +2112,7 @@ export function LauncherWindow() {
   useEffect(() => {
     if (!isResizing) return;
 
-    const whiteContainer = document.querySelector('.bg-white') as HTMLElement;
+    const whiteContainer = getMainContainer();
     if (!whiteContainer) return;
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -2018,7 +2150,7 @@ export function LauncherWindow() {
       }
 
       // Get final width from container
-      const whiteContainer = document.querySelector('.bg-white') as HTMLElement;
+      const whiteContainer = getMainContainer();
       if (whiteContainer) {
         const finalWidth = whiteContainer.offsetWidth;
         setWindowWidth(finalWidth);
@@ -2977,12 +3109,7 @@ export function LauncherWindow() {
         // Allow dragging from empty areas (not on white container)
         const target = e.target as HTMLElement;
         if (target === e.currentTarget || !target.closest('.bg-white')) {
-          const window = getCurrentWindow();
-          try {
-            await window.startDragging();
-          } catch (error) {
-            console.error("Failed to start dragging:", error);
-          }
+          await startWindowDragging();
         }
       }}
       onKeyDown={async (e) => {
@@ -3032,29 +3159,25 @@ export function LauncherWindow() {
       {!(isMemoModalOpen || isPluginListModalOpen) && (
       <div className="w-full flex justify-center relative">
         <div 
-          className="bg-white flex flex-col rounded-lg shadow-xl" 
+          className={layout.container}
+          ref={containerRef}
           style={{ minHeight: '200px', width: `${windowWidth}px` }}
         >
           {/* Search Box */}
           <div 
-            className="px-6 py-4 border-b border-gray-100 flex-shrink-0"
+            className={layout.header}
             onMouseDown={async (e) => {
               // Only start dragging if clicking on the container or search icon, not on input
               const target = e.target as HTMLElement;
               if (target.tagName !== 'INPUT' && !target.closest('input')) {
-                const window = getCurrentWindow();
-                try {
-                  await window.startDragging();
-                } catch (error) {
-                  console.error("Failed to start dragging:", error);
-                }
+                await startWindowDragging();
               }
             }}
             style={{ cursor: 'move' }}
           >
             <div className="flex items-center gap-3">
               <svg
-                className="w-5 h-5 text-gray-400"
+                className={layout.searchIcon}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -3074,7 +3197,7 @@ export function LauncherWindow() {
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder="输入应用名称或粘贴文件路径..."
-                className="flex-1 text-lg border-none outline-none bg-transparent placeholder-gray-400 text-gray-700"
+                className={layout.input}
                 style={{ cursor: 'text' }}
                 autoFocus
                 onFocus={(e) => {
@@ -3104,9 +3227,7 @@ export function LauncherWindow() {
                 title="应用中心"
               >
                 <svg
-                  className={`w-5 h-5 transition-all ${
-                    isHoveringAiIcon ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-70'
-                  }`}
+                  className={layout.pluginIcon(isHoveringAiIcon)}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -3771,7 +3892,7 @@ export function LauncherWindow() {
           onMouseDown={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            const whiteContainer = document.querySelector('.bg-white') as HTMLElement;
+            const whiteContainer = getMainContainer();
             if (whiteContainer) {
               resizeStartX.current = e.clientX;
               resizeStartWidth.current = whiteContainer.offsetWidth;
