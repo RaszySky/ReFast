@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, emit } from "@tauri-apps/api/event";
 import { tauriApi } from "./api/tauri";
+import { trackEvent } from "./api/events";
 import { OllamaSettingsPage, SystemSettingsPage, AboutSettingsPage } from "./components/SettingsPages";
 import "./styles.css";
 
@@ -64,6 +65,11 @@ function SettingsApp() {
       }
       setSaveMessage("设置已保存");
       setTimeout(() => setSaveMessage(null), 2000);
+      trackEvent("settings_saved", {
+        startup_enabled: settings.startup_enabled,
+        result_style: settings.result_style,
+        close_on_blur: settings.close_on_blur,
+      });
       
       // 发送设置更新事件，通知其他窗口
       await emit("settings:updated", {});
@@ -80,10 +86,10 @@ function SettingsApp() {
     setIsTesting(true);
     setTestResult(null);
     
+    const baseUrl = settings.ollama.base_url || 'http://localhost:11434';
+    const model = settings.ollama.model || 'llama2';
+
     try {
-      const baseUrl = settings.ollama.base_url || 'http://localhost:11434';
-      const model = settings.ollama.model || 'llama2';
-      
       // 尝试使用 chat API 测试连接
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: 'POST',
@@ -125,12 +131,14 @@ function SettingsApp() {
           success: true,
           message: `连接成功！模型 "${model}" 可用。`,
         });
+        trackEvent("ollama_test_connection", { success: true, base_url: baseUrl, model });
       } else {
         await response.json();
         setTestResult({
           success: true,
           message: `连接成功！模型 "${model}" 可用。`,
         });
+        trackEvent("ollama_test_connection", { success: true, base_url: baseUrl, model });
       }
     } catch (error: any) {
       console.error('测试连接失败:', error);
@@ -139,6 +147,7 @@ function SettingsApp() {
         success: false,
         message: `连接失败: ${errorMessage}`,
       });
+      trackEvent("ollama_test_connection", { success: false, base_url: baseUrl, model });
     } finally {
       setIsTesting(false);
     }

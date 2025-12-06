@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { tauriApi } from "../api/tauri";
+import { trackEvent } from "../api/events";
 import type { AppInfo, FileHistoryItem, EverythingResult, MemoItem, PluginContext, SystemFolderItem } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/window";
@@ -2771,6 +2772,7 @@ export function LauncherWindow() {
         return;
       } else if (result.type === "app" && result.app) {
         await tauriApi.launchApplication(result.app);
+        trackEvent("app_launched", { name: result.app.name });
       } else if (result.type === "file" && result.file) {
         await tauriApi.launchFile(result.file.path);
       } else if (result.type === "everything" && result.everything) {

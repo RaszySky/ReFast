@@ -1444,28 +1444,44 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
                   </div>
                 )}
                 {!isLoadingPluginUsage && pluginUsage.length > 0 && (
-                  <div className="space-y-2">
-                    {pluginUsage.slice(0, 20).map((item) => {
-                      const displayName = item.name || pluginNameMap.get(item.pluginId) || item.pluginId;
-                      return (
-                        <div
-                          key={item.pluginId}
-                          className="flex items-center justify-between gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900 truncate">{displayName}</div>
-                            <div className="text-xs text-gray-500 truncate">{item.pluginId}</div>
-                            <div className="text-xs text-gray-400">最近使用 {formatTimestamp(item.lastOpened)}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-lg font-semibold text-gray-900">
-                              {item.openCount.toLocaleString()}
+                  <div className="space-y-3">
+                    {(() => {
+                      const maxCount = Math.max(...pluginUsage.map((p) => p.openCount), 1);
+                      const barColors = [
+                        "bg-blue-500",
+                        "bg-green-500",
+                        "bg-indigo-500",
+                        "bg-amber-500",
+                        "bg-purple-500",
+                        "bg-rose-500",
+                      ];
+                      return pluginUsage.slice(0, 20).map((item, idx) => {
+                        const displayName = item.name || pluginNameMap.get(item.pluginId) || item.pluginId;
+                        const widthPercent = Math.max(6, Math.round((item.openCount / maxCount) * 100));
+                        const colorClass = barColors[idx % barColors.length];
+                        return (
+                          <div key={item.pluginId} className="space-y-1">
+                            <div className="flex items-center justify-between text-xs text-gray-600">
+                              <div className="truncate pr-2 font-medium text-gray-900">{displayName}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-500">{item.openCount.toLocaleString()}</span>
+                                <span className="text-[11px] text-gray-400">累计次数</span>
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-500">累计次数</div>
+                            <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className={`h-2 rounded-full ${colorClass} transition-all`}
+                                style={{ width: `${widthPercent}%` }}
+                                aria-label={`${displayName} 使用 ${item.openCount} 次`}
+                              />
+                            </div>
+                            <div className="text-[11px] text-gray-400">
+                              最近使用 {formatTimestamp(item.lastOpened)}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                     {pluginUsage.length > 20 && (
                       <div className="text-[11px] text-gray-400">已显示前 20 个插件</div>
                     )}

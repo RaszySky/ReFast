@@ -13,6 +13,7 @@ import HotkeySettingsApp from "./HotkeySettingsApp";
 import CalculatorPadApp from "./CalculatorPadApp";
 import EverythingSearchApp from "./EverythingSearchApp";
 import { initializePlugins } from "./plugins";
+import { trackEvent } from "./api/events";
 import "./styles.css";
 
 // Determine which app to render based on window label
@@ -37,6 +38,8 @@ async function initApp() {
     // Fallback to launcher
     label = "launcher";
   }
+
+  trackEvent("app_started", { window_label: label });
   
   // 初始化插件系统（仅在 launcher 窗口初始化）
   // 注意：不等待插件初始化完成，避免阻塞渲染
