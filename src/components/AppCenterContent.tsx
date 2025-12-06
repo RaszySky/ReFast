@@ -328,6 +328,21 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
     await handleRestoreBackup(path);
   };
 
+  const handleOpenDeleteBackupConfirm = (path: string) => {
+    setDeleteBackupConfirmPath(path);
+  };
+
+  const handleCancelDeleteBackup = () => {
+    setDeleteBackupConfirmPath(null);
+  };
+
+  const handleConfirmDeleteBackup = async () => {
+    if (!deleteBackupConfirmPath) return;
+    const path = deleteBackupConfirmPath;
+    setDeleteBackupConfirmPath(null);
+    await handleDeleteBackup(path);
+  };
+
   const handleDeleteBackup = async (path: string) => {
     setDeletingBackup(path);
     setBackupError(null);
@@ -1035,7 +1050,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
                                     {restoringBackup === item.path ? "还原中..." : "还原"}
                                   </button>
                                   <button
-                                    onClick={() => handleDeleteBackup(item.path)}
+                                    onClick={() => handleOpenDeleteBackupConfirm(item.path)}
                                     className="px-2 py-1 text-[11px] rounded border border-gray-200 hover:border-gray-300 text-red-600"
                                     disabled={restoringBackup === item.path || deletingBackup === item.path}
                                   >
@@ -1357,6 +1372,32 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
                 className="px-3 py-2 text-sm rounded-lg bg-red-50 text-red-700 border border-red-200 hover:border-red-300"
               >
                 确认还原
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteBackupConfirmPath && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 p-5">
+            <div className="text-lg font-semibold text-gray-900 mb-2">确认删除备份</div>
+            <div className="text-sm text-gray-700 mb-4 space-y-2">
+              <div>删除后无法恢复此备份文件，确定继续吗？</div>
+              <div className="text-xs text-gray-500 break-all">{deleteBackupConfirmPath}</div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleCancelDeleteBackup}
+                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:border-gray-300 text-gray-700"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmDeleteBackup}
+                className="px-3 py-2 text-sm rounded-lg bg-red-50 text-red-700 border border-red-200 hover:border-red-300"
+              >
+                确认删除
               </button>
             </div>
           </div>
