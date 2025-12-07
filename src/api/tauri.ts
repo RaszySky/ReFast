@@ -55,7 +55,7 @@ export const tauriApi = {
     return invoke("scan_applications");
   },
 
-  async rescanApplications(): Promise<AppInfo[]> {
+  async rescanApplications(): Promise<void> {
     return invoke("rescan_applications");
   },
 
@@ -288,6 +288,10 @@ export const tauriApi = {
 
   async showEverythingSearchWindow(): Promise<void> {
     return invoke("show_everything_search_window");
+  },
+
+  async showTranslationWindow(): Promise<void> {
+    return invoke("show_translation_window");
   },
 
   async previewFileReplace(params: {

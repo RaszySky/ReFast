@@ -12,6 +12,7 @@ import FileToolboxApp from "./FileToolboxApp";
 import HotkeySettingsApp from "./HotkeySettingsApp";
 import CalculatorPadApp from "./CalculatorPadApp";
 import EverythingSearchApp from "./EverythingSearchApp";
+import TranslationApp from "./TranslationApp";
 import { initializePlugins } from "./plugins";
 import { trackEvent } from "./api/events";
 import "./styles.css";
@@ -126,6 +127,13 @@ async function initApp() {
         </StrictMode>
       );
       console.log("[初始化] EverythingSearchApp 已渲染");
+    } else if (label === "translation-window") {
+      ReactDOM.createRoot(root).render(
+        <StrictMode>
+          <TranslationApp />
+        </StrictMode>
+      );
+      console.log("[初始化] TranslationApp 已渲染");
     } else {
       ReactDOM.createRoot(root).render(
         <StrictMode>

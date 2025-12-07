@@ -544,6 +544,7 @@ fn main() {
             show_memo_window,
             show_plugin_list_window,
             show_json_formatter_window,
+            show_translation_window,
             show_file_toolbox_window,
             show_calculator_pad_window,
             show_everything_search_window,

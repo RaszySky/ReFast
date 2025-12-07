@@ -504,55 +504,95 @@ pub async fn scan_applications(app: tauri::AppHandle) -> Result<Vec<app_search::
 }
 
 #[tauri::command]
-pub async fn rescan_applications(app: tauri::AppHandle) -> Result<Vec<app_search::AppInfo>, String> {
+pub async fn rescan_applications(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("launcher")
+        .or_else(|| app.get_webview_window("main"))
+        .ok_or_else(|| "无法获取窗口".to_string())?;
+    
     let app_clone = app.clone();
-    async_runtime::spawn_blocking(move || {
-        let cache = APP_CACHE.clone();
-        let mut cache_guard = cache.lock().map_err(|e| e.to_string())?;
+    let window_clone = window.clone();
+    
+    // 立即返回，在后台执行扫描
+    async_runtime::spawn(async move {
+        let scan_result = async_runtime::spawn_blocking(move || -> Result<Vec<app_search::AppInfo>, String> {
+            let cache = APP_CACHE.clone();
+            let mut cache_guard = cache.lock().map_err(|e| format!("锁定缓存失败: {}", e))?;
 
-        // Clear memory cache
-        *cache_guard = None;
+            // Clear memory cache
+            *cache_guard = None;
 
-        // Clear disk cache
-        let app_data_dir = get_app_data_dir(&app_clone)?;
-        let cache_file = app_search::windows::get_cache_file_path(&app_data_dir);
-        let _ = fs::remove_file(&cache_file); // Ignore errors if file doesn't exist
+            // Clear disk cache
+            let app_data_dir = get_app_data_dir(&app_clone).map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+            let cache_file = app_search::windows::get_cache_file_path(&app_data_dir);
+            let _ = fs::remove_file(&cache_file); // Ignore errors if file doesn't exist
 
-        // Force rescan
-        let apps = app_search::windows::scan_start_menu()?;
+            // Force rescan
+            let apps = app_search::windows::scan_start_menu()?;
 
-        // Cache the results
-        *cache_guard = Some(apps.clone());
+            // Cache the results
+            *cache_guard = Some(apps.clone());
 
-        // Save to disk cache
-        let _ = app_search::windows::save_cache(&app_data_dir, &apps);
+            // Save to disk cache
+            let _ = app_search::windows::save_cache(&app_data_dir, &apps);
 
-        Ok(apps)
-    })
-    .await
-    .map_err(|e| format!("rescan_applications join error: {}", e))?
+            Ok(apps)
+        })
+        .await;
+        
+        // 在异步上下文中发送事件
+        match scan_result {
+            Ok(Ok(apps)) => {
+                let _ = window_clone.emit("app-rescan-complete", &serde_json::json!({
+                    "apps": apps
+                }));
+            }
+            Ok(Err(e)) => {
+                let _ = window_clone.emit("app-rescan-error", &serde_json::json!({
+                    "error": e
+                }));
+            }
+            Err(e) => {
+                let _ = window_clone.emit("app-rescan-error", &serde_json::json!({
+                    "error": format!("扫描任务失败: {}", e)
+                }));
+            }
+        }
+    });
+    
+    Ok(())
 }
 
 #[tauri::command]
-pub fn search_applications(
+pub async fn search_applications(
     query: String,
     app: tauri::AppHandle,
 ) -> Result<Vec<app_search::AppInfo>, String> {
     let cache = APP_CACHE.clone();
-    let cache_guard = cache.lock().map_err(|e| e.to_string())?;
+    let app_handle_clone = app.clone();
+    
+    // 在后台线程执行搜索，避免阻塞 UI
+    // 需要提前克隆 cache，因为闭包会移动它
+    let cache_for_search = cache.clone();
+    let results = async_runtime::spawn_blocking(move || {
+        let cache_guard = cache_for_search.lock().map_err(|e| e.to_string())?;
 
-    let apps = cache_guard
-        .as_ref()
-        .ok_or_else(|| "Applications not scanned yet. Call scan_applications first.".to_string())?;
+        let apps = cache_guard
+            .as_ref()
+            .ok_or_else(|| "Applications not scanned yet. Call scan_applications first.".to_string())?;
 
-    let results = app_search::windows::search_apps(&query, apps);
+        let results = app_search::windows::search_apps(&query, apps);
+        
+        Ok::<Vec<app_search::AppInfo>, String>(results)
+    })
+    .await
+    .map_err(|e| format!("搜索任务失败: {}", e))??;
 
     // Icons are extracted asynchronously in background - don't block search
     // This prevents UI freezing when PowerShell commands take time
 
     // Extract icons for top results asynchronously in background (non-blocking)
     let cache_clone = cache.clone();
-    let app_handle_clone = app.clone();
     let results_paths: Vec<String> = results
         .iter()
         .take(5)
@@ -2573,6 +2613,33 @@ pub async fn show_json_formatter_window(app: tauri::AppHandle) -> Result<(), Str
 }
 
 #[tauri::command]
+pub async fn show_translation_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    // 尝试获取现有窗口
+    if let Some(window) = app.get_webview_window("translation-window") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        // 动态创建窗口
+        let window = tauri::WebviewWindowBuilder::new(
+            &app,
+            "translation-window",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("翻译工具")
+        .inner_size(900.0, 700.0)
+        .resizable(true)
+        .min_inner_size(600.0, 500.0)
+        .center()
+        .build()
+        .map_err(|e| format!("创建翻译窗口失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn show_file_toolbox_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
@@ -2930,7 +2997,6 @@ fn process_file_replace(
 /// 备份文件夹到父目录，备份文件夹名称包含时间戳
 fn backup_folder(folder_path: &Path) -> Result<std::path::PathBuf, String> {
     use std::fs;
-    use std::path::PathBuf;
     use chrono::Local;
 
     let parent_dir = folder_path
