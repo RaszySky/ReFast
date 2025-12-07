@@ -142,6 +142,43 @@ export function TranslationWindow() {
     updateIframeUrl(currentProvider, sourceLang, targetLang);
   }, [currentProvider, sourceLang, targetLang]);
 
+  // 组件加载时自动读取剪切板内容
+  useEffect(() => {
+    let isMounted = true;
+    
+    const readClipboard = async () => {
+      try {
+        // 检查是否支持 Clipboard API
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const clipboardText = await navigator.clipboard.readText();
+          // 如果剪切板有内容且输入框为空，则自动填充
+          if (isMounted && clipboardText && clipboardText.trim()) {
+            // 使用函数式更新来检查当前状态
+            setInputText((currentText) => {
+              // 如果输入框已有内容，则不覆盖（可能是从事件监听器设置的）
+              if (currentText && currentText.trim()) {
+                return currentText;
+              }
+              // 返回剪切板内容，URL 更新会由其他 useEffect 自动处理
+              return clipboardText.trim();
+            });
+          }
+        }
+      } catch (error) {
+        // 静默处理错误（可能是权限问题或剪切板为空）
+        console.log("[翻译] 无法读取剪切板内容:", error);
+      }
+    };
+
+    // 延迟读取，确保窗口已完全加载
+    const timer = setTimeout(readClipboard, 300);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, []); // 只在组件挂载时执行一次
+
   // 监听来自启动器的文本设置事件
   useEffect(() => {
     let unlisten: (() => void) | null = null;
