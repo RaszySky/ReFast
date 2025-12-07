@@ -1113,6 +1113,19 @@ export function LauncherWindow() {
 
     const trimmedQuery = query.trim();
     
+    // 如果查询改变了，立即清空结果，避免在防抖期间显示旧结果
+    if (trimmedQuery !== lastSearchQueryRef.current && trimmedQuery !== "") {
+      setFilteredApps([]);
+      setFilteredFiles([]);
+      setFilteredMemos([]);
+      setFilteredPlugins([]);
+      setSystemFolders([]);
+      setEverythingResults([]);
+      setEverythingTotalCount(null);
+      setEverythingCurrentCount(0);
+      setDirectPathResult(null);
+    }
+    
     if (trimmedQuery === "") {
       // Cancel any ongoing search
       if (currentSearchRef.current) {
@@ -1212,6 +1225,12 @@ export function LauncherWindow() {
       
       // 标记当前查询为已搜索
       lastSearchQueryRef.current = trimmedQuery;
+      // 立即清空所有搜索结果，避免显示旧结果
+      setFilteredApps([]);
+      setFilteredFiles([]);
+      setFilteredMemos([]);
+      setFilteredPlugins([]);
+      setSystemFolders([]);
       searchApplications(trimmedQuery);
       searchFileHistory(trimmedQuery);
       searchMemos(trimmedQuery);
@@ -2736,6 +2755,9 @@ export function LauncherWindow() {
   };
 
   const searchApplications = async (searchQuery: string) => {
+    // 立即清空旧结果，避免显示上一个搜索的结果
+    setFilteredApps([]);
+    
     try {
       // Don't search if query is empty
       if (!searchQuery || searchQuery.trim() === "") {
@@ -2755,7 +2777,10 @@ export function LauncherWindow() {
       const results = await tauriApi.searchApplications(searchQuery);
       
       // Final check: only update if query hasn't changed
-      if (query.trim() === searchQuery.trim()) {
+      const currentQueryTrimmed = query.trim();
+      const searchQueryTrimmed = searchQuery.trim();
+      const shouldUpdate = currentQueryTrimmed === searchQueryTrimmed;
+      if (shouldUpdate) {
         setFilteredApps(results);
       } else {
         // Query changed during search, ignore results
