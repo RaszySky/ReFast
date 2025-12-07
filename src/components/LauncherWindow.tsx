@@ -56,8 +56,12 @@ export function LauncherWindow() {
   const [isSearchingEverything, setIsSearchingEverything] = useState(false);
   const [isDownloadingEverything, setIsDownloadingEverything] = useState(false);
   const [everythingDownloadProgress, setEverythingDownloadProgress] = useState(0);
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [results, setResults] = useState<SearchResult[]>([]); // Keep for backward compatibility, will be removed later
+  const [horizontalResults, setHorizontalResults] = useState<SearchResult[]>([]);
+  const [verticalResults, setVerticalResults] = useState<SearchResult[]>([]);
+  const [selectedHorizontalIndex, setSelectedHorizontalIndex] = useState<number | null>(null);
+  const [selectedVerticalIndex, setSelectedVerticalIndex] = useState<number | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0); // Keep for now, will be computed from selectedHorizontalIndex/selectedVerticalIndex
   const [isLoading, setIsLoading] = useState(false);
   const [isHoveringAiIcon, setIsHoveringAiIcon] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -119,6 +123,9 @@ export function LauncherWindow() {
   const debounceTimeoutRef = useRef<number | null>(null); // 用于跟踪防抖定时器
   const currentLoadResultsRef = useRef<SearchResult[]>([]); // 跟踪当前正在加载的结果，用于验证是否仍有效
   const closeOnBlurRef = useRef(true);
+  const isHorizontalNavigationRef = useRef(false); // 标记是否是横向导航切换
+  const isAutoSelectingFirstHorizontalRef = useRef(false); // 标记是否正在自动选择第一个横向结果（用于防止scrollIntoView）
+  const justJumpedToVerticalRef = useRef(false); // 标记是否刚刚从横向跳转到纵向（用于防止results useEffect重置selectedIndex）
 
   const getMainContainer = () => containerRef.current || (document.querySelector('.bg-white') as HTMLElement | null);
 
@@ -575,7 +582,7 @@ export function LauncherWindow() {
     // Set initial size after a short delay to ensure DOM is ready
     setTimeout(setWindowSize, 100);
     
-    // Global keyboard listener for Escape key
+    // Global keyboard listener for Escape key and Arrow keys
     const handleGlobalKeyDown = async (e: KeyboardEvent) => {
       if (e.key === "Escape" || e.keyCode === 27) {
         e.preventDefault();
@@ -605,6 +612,54 @@ export function LauncherWindow() {
           return;
         }
         await hideLauncherAndResetState({ resetMemo: true });
+        return;
+      }
+      
+      // Handle ArrowDown globally when input might not be focused
+      if (e.key === "ArrowDown" && results.length > 0) {
+        
+        // Only handle if input is not focused (to avoid double handling)
+        const isInputFocused = document.activeElement === inputRef.current;
+        if (!isInputFocused) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // Use the same logic as handleKeyDown for ArrowDown
+          // Check if current selected item is in horizontal results
+          const executableResults = results.filter(result => {
+            if (result.type === "app") {
+              const pathLower = result.path.toLowerCase();
+              return pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
+            }
+            return false;
+          });
+          
+          const pluginResults = results.filter(result => {
+            return result.type === "plugin";
+          });
+          
+          const horizontalResults = [...executableResults, ...pluginResults];
+          const horizontalIndices = horizontalResults.map(hr => results.indexOf(hr)).filter(idx => idx >= 0);
+          
+          
+          // If current selected item is in horizontal results, jump to first vertical result
+          if (horizontalIndices.includes(selectedIndex)) {
+            const firstVerticalIndex = results.findIndex((_, index) => {
+              return !horizontalIndices.includes(index);
+            });
+            
+            
+            if (firstVerticalIndex >= 0) {
+              setSelectedIndex(firstVerticalIndex);
+              return;
+            }
+          }
+          
+          // Otherwise, increment normally
+          setSelectedIndex((prev) =>
+            prev < results.length - 1 ? prev + 1 : prev
+          );
+        }
       }
     };
     
@@ -1654,6 +1709,28 @@ export function LauncherWindow() {
     queryRef.current = query;
   }, [query]);
 
+  // Helper function to split results into horizontal and vertical
+  const splitResults = (allResults: SearchResult[]) => {
+    const executableResults = allResults.filter(result => {
+      if (result.type === "app") {
+        const pathLower = result.path.toLowerCase();
+        return pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
+      }
+      return false;
+    });
+    const pluginResults = allResults.filter(result => result.type === "plugin");
+    const horizontal = [...executableResults, ...pluginResults];
+    const vertical = allResults.filter(result => {
+      // Not an executable app and not a plugin
+      if (result.type === "app") {
+        const pathLower = result.path.toLowerCase();
+        return !pathLower.endsWith('.exe') && !pathLower.endsWith('.lnk');
+      }
+      return result.type !== "plugin";
+    });
+    return { horizontal, vertical };
+  };
+
   // 分批加载结果的函数
   const loadResultsIncrementally = (allResults: SearchResult[]) => {
     // 取消之前的增量加载（包括 animationFrame 和 setTimeout）
@@ -1669,6 +1746,10 @@ export function LauncherWindow() {
     // 如果 query 为空且没有结果（包括 AI 回答），直接清空结果并返回
     if (queryRef.current.trim() === "" && allResults.length === 0) {
       setResults([]);
+      setHorizontalResults([]);
+      setVerticalResults([]);
+      setSelectedHorizontalIndex(null);
+      setSelectedVerticalIndex(null);
       currentLoadResultsRef.current = [];
       return;
     }
@@ -1676,15 +1757,35 @@ export function LauncherWindow() {
     // 保存当前要加载的结果引用，用于后续验证
     currentLoadResultsRef.current = allResults;
 
+    // Split results into horizontal and vertical
+    const { horizontal, vertical } = splitResults(allResults);
+
     const INITIAL_COUNT = 100; // 初始显示100条
     const INCREMENT = 50; // 每次增加50条
     const DELAY_MS = 16; // 每帧延迟（约60fps）
 
     // 重置显示数量（如果有结果就显示，即使查询为空）
     if (allResults.length > 0) {
-      setResults(allResults.slice(0, INITIAL_COUNT));
+      const initialResults = allResults.slice(0, INITIAL_COUNT);
+      setResults(initialResults);
+      // Split the initial results too
+      const { horizontal: initialHorizontal, vertical: initialVertical } = splitResults(initialResults);
+      setHorizontalResults(initialHorizontal);
+      setVerticalResults(initialVertical);
+      // Auto-select first horizontal result if available
+      if (initialHorizontal.length > 0) {
+        setSelectedHorizontalIndex(0);
+        setSelectedVerticalIndex(null);
+      } else if (initialVertical.length > 0) {
+        setSelectedHorizontalIndex(null);
+        setSelectedVerticalIndex(0);
+      }
     } else {
       setResults([]);
+      setHorizontalResults([]);
+      setVerticalResults([]);
+      setSelectedHorizontalIndex(null);
+      setSelectedVerticalIndex(null);
       currentLoadResultsRef.current = [];
       return;
     }
@@ -1692,6 +1793,16 @@ export function LauncherWindow() {
     // 如果结果数量少于初始数量，直接返回
     if (allResults.length <= INITIAL_COUNT) {
       setResults(allResults);
+      setHorizontalResults(horizontal);
+      setVerticalResults(vertical);
+      // Auto-select first horizontal result if available
+      if (horizontal.length > 0) {
+        setSelectedHorizontalIndex(0);
+        setSelectedVerticalIndex(null);
+      } else if (vertical.length > 0) {
+        setSelectedHorizontalIndex(null);
+        setSelectedVerticalIndex(0);
+      }
       currentLoadResultsRef.current = [];
       return;
     }
@@ -1704,6 +1815,10 @@ export function LauncherWindow() {
           currentLoadResultsRef.current !== allResults) {
         // 结果已过时或查询已清空，停止加载
         setResults([]);
+        setHorizontalResults([]);
+        setVerticalResults([]);
+        setSelectedHorizontalIndex(null);
+        setSelectedVerticalIndex(null);
         incrementalLoadRef.current = null;
         incrementalTimeoutRef.current = null;
         currentLoadResultsRef.current = [];
@@ -1765,6 +1880,10 @@ export function LauncherWindow() {
     // 如果查询为空且没有 AI 回答，直接清空结果
     if (query.trim() === "" && !aiAnswer) {
       setResults([]);
+      setHorizontalResults([]);
+      setVerticalResults([]);
+      setSelectedHorizontalIndex(null);
+      setSelectedVerticalIndex(null);
       // 取消所有增量加载任务
       if (incrementalLoadRef.current !== null) {
         cancelAnimationFrame(incrementalLoadRef.current);
@@ -1794,6 +1913,56 @@ export function LauncherWindow() {
       currentLoadResultsRef.current = [];
     };
   }, [combinedResults, query]);
+
+  // Watch results changes and set selectedIndex to first horizontal result
+  useEffect(() => {
+    
+    // If we just jumped to vertical, don't reset selectedIndex
+    if (justJumpedToVerticalRef.current) {
+      return;
+    }
+    
+    if (results.length === 0) {
+      setSelectedIndex(0);
+      return;
+    }
+    
+    // Calculate horizontal results (executables and plugins)
+    const executableResults = results.filter(result => {
+      if (result.type === "app") {
+        const pathLower = result.path.toLowerCase();
+        return pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
+      }
+      return false;
+    });
+    
+    const pluginResults = results.filter(result => {
+      return result.type === "plugin";
+    });
+    
+    const horizontalResults = [...executableResults, ...pluginResults];
+    
+    
+    // If there are horizontal results, set selectedIndex to the first one
+    if (horizontalResults.length > 0) {
+      const firstHorizontalIndex = results.indexOf(horizontalResults[0]);
+      if (firstHorizontalIndex >= 0) {
+        // Mark that we're auto-selecting to prevent scrollIntoView
+        isAutoSelectingFirstHorizontalRef.current = true;
+        setSelectedIndex(firstHorizontalIndex);
+        // Reset flag after a short delay to allow scrollIntoView for user navigation
+        setTimeout(() => {
+          isAutoSelectingFirstHorizontalRef.current = false;
+        }, 100);
+        return;
+      }
+    }
+    
+    // Otherwise, set to 0 (first result)
+    if (selectedIndex !== 0) {
+      setSelectedIndex(0);
+    }
+  }, [results]);
 
   useEffect(() => {
     // 保存当前滚动位置（如果需要保持）
@@ -2015,24 +2184,167 @@ export function LauncherWindow() {
   }, [isResizing]);
 
   // Scroll selected item into view and adjust window size
-  // 只在 selectedIndex 变化时滚动，避免在结果更新时意外滚动
+  // 只在 selectedVerticalIndex 变化时滚动，避免在结果更新时意外滚动
   useEffect(() => {
     // 如果正在保持滚动位置，不要执行 scrollIntoView
     if (shouldPreserveScrollRef.current) {
       return;
     }
     
-    if (listRef.current && selectedIndex >= 0 && results.length > 0) {
-      const items = listRef.current.children;
-      if (items[selectedIndex]) {
-        items[selectedIndex].scrollIntoView({
-          block: "nearest",
-          behavior: "smooth",
-        });
+    // 如果是横向导航切换，不要执行 scrollIntoView，避免页面滚动
+    if (isHorizontalNavigationRef.current) {
+      return;
+    }
+    
+    // 如果正在自动选择第一个横向结果，不要执行 scrollIntoView，避免页面滚动到顶部
+    if (isAutoSelectingFirstHorizontalRef.current) {
+      return;
+    }
+    
+    // 如果刚刚从横向跳转到纵向，不要执行 scrollIntoView，避免过度滚动
+    if (justJumpedToVerticalRef.current) {
+      return;
+    }
+    
+    
+    // Only scroll for vertical results (horizontal results are in a horizontal scroll container)
+    if (listRef.current && selectedVerticalIndex !== null && verticalResults.length > 0 && selectedVerticalIndex >= 0) {
+      const container = listRef.current;
+      // Get the selected vertical result
+      const result = verticalResults[selectedVerticalIndex];
+      if (!result) {
+        return;
       }
+      
+      // The key format is: `${result.type}-${result.path}-${selectedVerticalIndex}`
+      const itemKey = `${result.type}-${result.path}-${selectedVerticalIndex}`;
+      const item = container.querySelector(`[data-item-key="${itemKey}"]`) as HTMLElement;
+      
+      
+      if (!item) {
+        // Fallback: try to find by iterating through children and checking data attributes
+        // or use offsetTop if the element structure allows
+        const allItems = container.querySelectorAll('[data-item-key]');
+        for (let i = 0; i < allItems.length; i++) {
+          const el = allItems[i] as HTMLElement;
+          if (el.dataset.itemKey === itemKey) {
+            const item = el;
+                const itemHeight = item.offsetHeight;
+                const containerTop = container.scrollTop;
+                const containerHeight = container.clientHeight;
+                
+                // Use getBoundingClientRect to get accurate position relative to viewport
+                const containerRect = container.getBoundingClientRect();
+                const itemRect = item.getBoundingClientRect();
+                // Calculate item's position in the scrollable content
+                // itemRect.top - containerRect.top gives position relative to container's visible area
+                // Add containerTop to get absolute position in scrollable content
+                const itemTopRelative = itemRect.top - containerRect.top + containerTop;
+                
+                const itemBottom = itemTopRelative + itemHeight;
+                const visibleTop = containerTop;
+                const visibleBottom = containerTop + containerHeight;
+                
+                
+                // Only scroll if item is not fully visible
+                if (itemTopRelative < visibleTop || itemBottom > visibleBottom) {
+                  // Calculate target scroll position - only scroll the minimum needed
+                  const padding = 8; // Small padding for visual spacing
+                  let targetScroll = containerTop; // Start with current scroll
+                  
+                  if (itemTopRelative < visibleTop) {
+                    // Item is above visible area - scroll up just enough to show it
+                    targetScroll = itemTopRelative - padding;
+                  } else if (itemBottom > visibleBottom) {
+                    // Item is below visible area - scroll down just enough to show it
+                    // Only scroll if we need to - calculate minimum scroll needed
+                    const scrollNeeded = itemBottom - visibleBottom + padding;
+                    targetScroll = containerTop + scrollNeeded;
+                  }
+                  
+                  // Ensure we don't scroll past the top
+                  if (targetScroll < 0) {
+                    targetScroll = 0;
+                  }
+                  
+                  // Ensure we don't scroll past the bottom
+                  const maxScroll = container.scrollHeight - containerHeight;
+                  if (targetScroll > maxScroll) {
+                    targetScroll = maxScroll;
+                  }
+                  
+                  
+                  container.scrollTo({
+                    top: targetScroll,
+                    behavior: "smooth",
+                  });
+                } else {
+                }
+                return;
+              }
+            }
+            return;
+          }
+      
+      // If we found the item, use it
+      if (item) {
+        const itemHeight = item.offsetHeight;
+        const containerTop = container.scrollTop;
+        const containerHeight = container.clientHeight;
+        
+        // Use getBoundingClientRect to get accurate position relative to viewport
+        const containerRect = container.getBoundingClientRect();
+        const itemRect = item.getBoundingClientRect();
+        // Calculate item's position in the scrollable content
+        // itemRect.top - containerRect.top gives position relative to container's visible area
+        // Add containerTop to get absolute position in scrollable content
+        const itemTopRelative = itemRect.top - containerRect.top + containerTop;
+        
+        const itemBottom = itemTopRelative + itemHeight;
+        const visibleTop = containerTop;
+        const visibleBottom = containerTop + containerHeight;
+        
+        
+        // Only scroll if item is not fully visible
+        if (itemTopRelative < visibleTop || itemBottom > visibleBottom) {
+          // Calculate target scroll position - only scroll the minimum needed
+          const padding = 8; // Small padding for visual spacing
+          let targetScroll = containerTop; // Start with current scroll
+          
+          if (itemTopRelative < visibleTop) {
+            // Item is above visible area - scroll up just enough to show it
+            targetScroll = itemTopRelative - padding;
+          } else if (itemBottom > visibleBottom) {
+            // Item is below visible area - scroll down just enough to show it
+            // Only scroll if we need to - calculate minimum scroll needed
+            const scrollNeeded = itemBottom - visibleBottom + padding;
+            targetScroll = containerTop + scrollNeeded;
+          }
+          
+          // Ensure we don't scroll past the top
+          if (targetScroll < 0) {
+            targetScroll = 0;
+          }
+          
+          // Ensure we don't scroll past the bottom
+          const maxScroll = container.scrollHeight - containerHeight;
+          if (targetScroll > maxScroll) {
+            targetScroll = maxScroll;
+          }
+          
+          
+          container.scrollTo({
+            top: targetScroll,
+            behavior: "smooth",
+          });
+        } else {
+        }
+      } else {
+      }
+    } else {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIndex]); // 只依赖 selectedIndex，避免在结果更新时触发滚动
+  }, [selectedVerticalIndex]); // 只依赖 selectedVerticalIndex，避免在结果更新时触发滚动
 
   const loadApplications = async (forceRescan: boolean = false) => {
     try {
@@ -2877,22 +3189,184 @@ export function LauncherWindow() {
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((prev) =>
-        prev < results.length - 1 ? prev + 1 : prev
-      );
+      
+      // 检查当前焦点是否在输入框
+      const isInputFocused = document.activeElement === inputRef.current;
+      
+      // 如果当前选中的是横向结果，按ArrowDown应该跳转到第一个纵向结果
+      if (selectedHorizontalIndex !== null) {
+        if (verticalResults.length > 0) {
+          // Mark that we just jumped to vertical to prevent results useEffect from resetting
+          justJumpedToVerticalRef.current = true;
+          setSelectedHorizontalIndex(null);
+          setSelectedVerticalIndex(0);
+          // Reset flag after a delay
+          setTimeout(() => {
+            justJumpedToVerticalRef.current = false;
+          }, 200);
+          return;
+        }
+        // No vertical results, stay at horizontal
+        return;
+      }
+      
+      // 如果当前选中的是纵向结果，移动到下一个纵向结果
+      if (selectedVerticalIndex !== null) {
+        if (selectedVerticalIndex < verticalResults.length - 1) {
+          // Ensure horizontal navigation flag is false for vertical navigation
+          isHorizontalNavigationRef.current = false;
+          setSelectedVerticalIndex(selectedVerticalIndex + 1);
+          return;
+        }
+        // No more vertical results, stay at current position
+        return;
+      }
+      
+      // 如果输入框有焦点，且有横向结果，则选中第一个横向结果
+      if (isInputFocused && horizontalResults.length > 0) {
+        setSelectedHorizontalIndex(0);
+        setSelectedVerticalIndex(null);
+        return;
+      }
+      
+      // 如果输入框有焦点，且有纵向结果，则选中第一个纵向结果
+      if (isInputFocused && verticalResults.length > 0) {
+        setSelectedHorizontalIndex(null);
+        setSelectedVerticalIndex(0);
+        return;
+      }
+      
       return;
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+      
+      // If we're at the first horizontal result, focus back to the search input
+      if (selectedHorizontalIndex === 0) {
+        // Focus the input and move cursor to the end
+        if (inputRef.current) {
+          inputRef.current.focus();
+          const length = inputRef.current.value.length;
+          inputRef.current.setSelectionRange(length, length);
+        }
+        setSelectedHorizontalIndex(null);
+        setSelectedVerticalIndex(null);
+        return;
+      }
+      
+      // If we're at the first vertical result, focus back to input or jump to last horizontal
+      if (selectedVerticalIndex === 0) {
+        if (horizontalResults.length > 0) {
+          // Jump to last horizontal result
+          setSelectedHorizontalIndex(horizontalResults.length - 1);
+          setSelectedVerticalIndex(null);
+          return;
+        } else {
+          // Focus input
+          if (inputRef.current) {
+            inputRef.current.focus();
+            const length = inputRef.current.value.length;
+            inputRef.current.setSelectionRange(length, length);
+          }
+          setSelectedHorizontalIndex(null);
+          setSelectedVerticalIndex(null);
+          return;
+        }
+      }
+      
+      // If current selection is in vertical results, move to previous vertical result
+      if (selectedVerticalIndex !== null && selectedVerticalIndex > 0) {
+        // Ensure horizontal navigation flag is false for vertical navigation
+        isHorizontalNavigationRef.current = false;
+        setSelectedVerticalIndex(selectedVerticalIndex - 1);
+        return;
+      }
+      
+      // If current selection is in horizontal results (not first), move to previous horizontal
+      if (selectedHorizontalIndex !== null && selectedHorizontalIndex > 0) {
+        setSelectedHorizontalIndex(selectedHorizontalIndex - 1);
+        setSelectedVerticalIndex(null);
+        return;
+      }
+      
+      return;
+    }
+
+    // 横向结果切换（ArrowLeft/ArrowRight）
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      // 立即阻止默认行为和事件传播，防止页面滚动
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // 如果横向结果为空，不处理但已阻止默认行为
+      if (horizontalResults.length === 0) {
+        return;
+      }
+      
+      // 标记这是横向导航，避免触发 scrollIntoView
+      isHorizontalNavigationRef.current = true;
+      
+      // 如果当前选中的是横向结果
+      if (selectedHorizontalIndex !== null) {
+        // 在横向结果之间切换
+        if (e.key === "ArrowRight") {
+          // 切换到下一个横向结果
+          const nextIndex = selectedHorizontalIndex < horizontalResults.length - 1 
+            ? selectedHorizontalIndex + 1 
+            : 0; // 循环到第一个
+          setSelectedHorizontalIndex(nextIndex);
+          setSelectedVerticalIndex(null);
+        } else if (e.key === "ArrowLeft") {
+          // 如果是在第一个横向结果，返回输入框
+          if (selectedHorizontalIndex === 0) {
+            if (inputRef.current) {
+              inputRef.current.focus();
+              const length = inputRef.current.value.length;
+              inputRef.current.setSelectionRange(length, length);
+            }
+            setSelectedHorizontalIndex(null);
+            setSelectedVerticalIndex(null);
+            return;
+          }
+          // 否则切换到上一个横向结果
+          const prevIndex = selectedHorizontalIndex > 0 
+            ? selectedHorizontalIndex - 1 
+            : horizontalResults.length - 1; // 循环到最后一个
+          setSelectedHorizontalIndex(prevIndex);
+          setSelectedVerticalIndex(null);
+        }
+      } else {
+        // 当前选中的是纵向结果，切换到横向结果的第一个或最后一个
+        if (e.key === "ArrowRight") {
+          // 切换到横向结果的第一个
+          setSelectedHorizontalIndex(0);
+          setSelectedVerticalIndex(null);
+        } else if (e.key === "ArrowLeft") {
+          // 切换到横向结果的最后一个
+          setSelectedHorizontalIndex(horizontalResults.length - 1);
+          setSelectedVerticalIndex(null);
+        }
+      }
+      
+      // 在下一个 tick 重置标志，允许后续的垂直导航触发滚动
+      setTimeout(() => {
+        isHorizontalNavigationRef.current = false;
+      }, 0);
       return;
     }
 
     if (e.key === "Enter") {
       e.preventDefault();
-      if (results[selectedIndex]) {
-        await handleLaunch(results[selectedIndex]);
+      // Get the selected result from either horizontal or vertical
+      let selectedResult: SearchResult | null = null;
+      if (selectedHorizontalIndex !== null && horizontalResults[selectedHorizontalIndex]) {
+        selectedResult = horizontalResults[selectedHorizontalIndex];
+      } else if (selectedVerticalIndex !== null && verticalResults[selectedVerticalIndex]) {
+        selectedResult = verticalResults[selectedVerticalIndex];
+      }
+      if (selectedResult) {
+        await handleLaunch(selectedResult);
       }
       return;
     }
@@ -3236,35 +3710,6 @@ export function LauncherWindow() {
               style={{ maxHeight: '500px' }}
             >
               {(() => {
-                // 分离可执行文件（app类型且路径是.exe或.lnk）和插件
-                const executableResults = results.filter(result => {
-                  if (result.type === "app") {
-                    const pathLower = result.path.toLowerCase();
-                    return pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
-                  }
-                  return false;
-                });
-                
-                // 分离插件
-                const pluginResults = results.filter(result => {
-                  return result.type === "plugin";
-                });
-                
-                // 合并可执行文件和插件到横向列表
-                const horizontalResults = [...executableResults, ...pluginResults];
-                
-                // 其他结果（排除可执行文件和插件）
-                const otherResults = results.filter(result => {
-                  if (result.type === "app") {
-                    const pathLower = result.path.toLowerCase();
-                    return !pathLower.endsWith('.exe') && !pathLower.endsWith('.lnk');
-                  }
-                  if (result.type === "plugin") {
-                    return false;
-                  }
-                  return true;
-                });
-                
                 return (
                   <>
                     {/* 可执行文件和插件横向排列在第一行 */}
@@ -3278,7 +3723,7 @@ export function LauncherWindow() {
                           }}
                         >
                           {horizontalResults.map((result, execIndex) => {
-                            const globalIndex = results.indexOf(result);
+                            const isSelected = selectedHorizontalIndex === execIndex;
                             return (
                               <div
                                 key={`executable-${result.path}-${execIndex}`}
@@ -3294,7 +3739,7 @@ export function LauncherWindow() {
                                 }}
                                 onContextMenu={(e) => handleContextMenu(e, result)}
                                 className={`flex flex-col items-center gap-1.5 p-2 rounded-lg cursor-pointer transition-all min-w-[70px] ${
-                                  globalIndex === selectedIndex 
+                                  isSelected 
                                     ? theme.card(true) 
                                     : 'hover:bg-gray-100 bg-gray-50'
                                 }`}
@@ -3302,7 +3747,7 @@ export function LauncherWindow() {
                                   animation: `fadeInUp 0.18s ease-out ${execIndex * 0.02}s both`,
                                 }}
                               >
-                                {globalIndex === selectedIndex && (
+                                {isSelected && (
                                   <div className={theme.indicator(true)} style={{ position: 'absolute', top: '4px', left: '4px', width: '3px', height: '3px', borderRadius: '50%' }} />
                                 )}
                                 <div className="flex-shrink-0 flex items-center justify-center" style={{ width: '70px' }}>
@@ -3327,7 +3772,7 @@ export function LauncherWindow() {
                                             const parent = target.parentElement;
                                             if (parent && !parent.querySelector('svg')) {
                                               const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                                              svg.setAttribute('class', `w-6 h-6 ${globalIndex === selectedIndex ? 'text-white' : 'text-gray-500'}`);
+                                              svg.setAttribute('class', `w-6 h-6 ${isSelected ? 'text-white' : 'text-gray-500'}`);
                                               svg.setAttribute('fill', 'none');
                                               svg.setAttribute('stroke', 'currentColor');
                                               svg.setAttribute('viewBox', '0 0 24 24');
@@ -3345,7 +3790,7 @@ export function LauncherWindow() {
                                     } else {
                                       return (
                                         <svg
-                                          className={`w-6 h-6 ${globalIndex === selectedIndex ? 'text-white' : 'text-gray-500'}`}
+                                          className={`w-6 h-6 ${isSelected ? 'text-white' : 'text-gray-500'}`}
                                           fill="none"
                                           stroke="currentColor"
                                           viewBox="0 0 24 24"
@@ -3366,7 +3811,7 @@ export function LauncherWindow() {
                                       );
                                     }
                                   })() : result.type === "plugin" && result.plugin ? (
-                                    getPluginIcon(result.plugin.id, `w-6 h-6 ${globalIndex === selectedIndex ? 'text-white' : 'text-purple-500'}`)
+                                    getPluginIcon(result.plugin.id, `w-6 h-6 ${isSelected ? 'text-white' : 'text-purple-500'}`)
                                   ) : null}
                                 </div>
                                 <div 
@@ -3393,13 +3838,14 @@ export function LauncherWindow() {
                       </div>
                     )}
                     {/* 其他结果垂直排列 */}
-                    {otherResults.map((result, index) => {
-                      // 计算全局索引（需要考虑可执行文件的数量）
-                      const globalIndex = results.indexOf(result);
-                      const isSelected = globalIndex === selectedIndex;
+                    {verticalResults.map((result, index) => {
+                      const isSelected = selectedVerticalIndex === index;
+                      // 计算垂直结果的序号（从1开始，只计算垂直结果）
+                      const verticalIndex = index + 1;
                       return (
                 <div
-                  key={`${result.type}-${result.path}-${globalIndex}`}
+                  key={`${result.type}-${result.path}-${index}`}
+                  data-item-key={`${result.type}-${result.path}-${index}`}
                   onMouseDown={async (e) => {
                     // 左键按下即触发，避免某些环境下 click 被吞掉
                     if (e.button !== 0) return;
@@ -3413,18 +3859,18 @@ export function LauncherWindow() {
                     e.stopPropagation();
                   }}
                   onContextMenu={(e) => handleContextMenu(e, result)}
-                  className={theme.card(globalIndex === selectedIndex)}
+                  className={theme.card(isSelected)}
                   style={{
                     animation: `fadeInUp 0.18s ease-out ${index * 0.02}s both`,
                   }}
                 >
-                  <div className={theme.indicator(globalIndex === selectedIndex)} />
+                  <div className={theme.indicator(isSelected)} />
                   <div className="flex items-center gap-3">
-                    {/* 序号 */}
-                    <div className={theme.indexBadge(globalIndex === selectedIndex)}>
-                      {globalIndex + 1}
+                    {/* 序号 - 使用垂直结果的序号（从1开始） */}
+                    <div className={theme.indexBadge(isSelected)}>
+                      {verticalIndex}
                     </div>
-                    <div className={theme.iconWrap(globalIndex === selectedIndex)}>
+                    <div className={theme.iconWrap(isSelected)}>
                       {result.type === "app" ? (() => {
                         // 优先使用 result.app.icon
                         let iconToUse = result.app?.icon;
