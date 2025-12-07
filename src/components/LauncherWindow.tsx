@@ -2359,6 +2359,28 @@ export function LauncherWindow() {
         requestAnimationFrame(() => {
           if (!container) return;
 
+          // First, ensure the horizontal section is visible in the main list container
+          // This is important when jumping from vertical results to horizontal results
+          // Since horizontal results are at the top of the list, scroll to top to show them
+          if (listRef.current) {
+            const listContainer = listRef.current;
+            const listRect = listContainer.getBoundingClientRect();
+            
+            // Check if horizontal section is visible
+            if (container.parentElement) {
+              const horizontalSection = container.parentElement as HTMLElement;
+              const sectionRect = horizontalSection.getBoundingClientRect();
+              
+              // If horizontal section is not fully visible in the list container, scroll to top
+              if (sectionRect.top < listRect.top || sectionRect.bottom > listRect.bottom) {
+                listContainer.scrollTo({
+                  top: 0,
+                  behavior: "smooth",
+                });
+              }
+            }
+          }
+
           // Find the selected item element
           const item = container.children[selectedHorizontalIndex] as HTMLElement;
           
@@ -3400,14 +3422,9 @@ export function LauncherWindow() {
           setSelectedHorizontalIndex(nextIndex);
           setSelectedVerticalIndex(null);
         } else if (e.key === "ArrowLeft") {
-          // 如果是在第一个横向结果，返回输入框
+          // 如果是在第一个横向结果，跳到最后一个横向结果
           if (selectedHorizontalIndex === 0) {
-            if (inputRef.current) {
-              inputRef.current.focus();
-              const length = inputRef.current.value.length;
-              inputRef.current.setSelectionRange(length, length);
-            }
-            setSelectedHorizontalIndex(null);
+            setSelectedHorizontalIndex(horizontalResults.length - 1);
             setSelectedVerticalIndex(null);
             return;
           }
