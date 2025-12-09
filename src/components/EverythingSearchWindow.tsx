@@ -114,52 +114,70 @@ export function EverythingSearchWindow() {
 
   // 加载偏好
   useEffect(() => {
-    try {
-      const savedSort = localStorage.getItem(SORT_PREFERENCE_KEY);
-      if (savedSort) {
-        const parsed = JSON.parse(savedSort) as { key?: SortKey; order?: SortOrder };
-        if (parsed.key) setSortKey(parsed.key);
-        if (parsed.order) setSortOrder(parsed.order);
-      }
+    const loadPreferences = async () => {
+      try {
+        const savedSort = localStorage.getItem(SORT_PREFERENCE_KEY);
+        if (savedSort) {
+          const parsed = JSON.parse(savedSort) as { key?: SortKey; order?: SortOrder };
+          if (parsed.key) setSortKey(parsed.key);
+          if (parsed.order) setSortOrder(parsed.order);
+        }
 
-      const savedFilterId = localStorage.getItem(FILTER_PREFERENCE_KEY);
-      if (savedFilterId) setActiveFilterId(savedFilterId);
+        const savedFilterId = localStorage.getItem(FILTER_PREFERENCE_KEY);
+        if (savedFilterId) setActiveFilterId(savedFilterId);
 
-      const savedCustom = localStorage.getItem(CUSTOM_FILTER_PREFERENCE_KEY);
-      if (savedCustom) {
+        // 从 SQLite 加载自定义过滤器
         try {
-          const parsed = JSON.parse(savedCustom) as CustomFilter[];
-          if (Array.isArray(parsed)) {
-            setCustomFilters(parsed);
-            console.log("已加载自定义过滤器:", parsed);
-          } else {
-            console.warn("自定义过滤器数据格式无效，已忽略");
+          const filters = await tauriApi.getEverythingCustomFilters();
+          setCustomFilters(filters || []);
+          console.log("已从数据库加载自定义过滤器:", filters);
+          
+          // 如果数据库为空，尝试从 localStorage 迁移一次（仅迁移，不降级）
+          if ((!filters || filters.length === 0)) {
+            const savedCustom = localStorage.getItem(CUSTOM_FILTER_PREFERENCE_KEY);
+            if (savedCustom) {
+              try {
+                const parsed = JSON.parse(savedCustom) as CustomFilter[];
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  // 迁移到数据库
+                  await tauriApi.saveEverythingCustomFilters(parsed);
+                  setCustomFilters(parsed);
+                  // 清除 localStorage 中的数据
+                  localStorage.removeItem(CUSTOM_FILTER_PREFERENCE_KEY);
+                  console.log("已从 localStorage 迁移自定义过滤器到数据库:", parsed);
+                }
+              } catch (error) {
+                console.error("迁移自定义过滤器失败:", error);
+              }
+            }
           }
         } catch (error) {
-          console.error("解析自定义过滤器失败:", error);
+          console.error("加载自定义过滤器失败:", error);
         }
-      }
 
-      const savedMaxResults = localStorage.getItem(MAX_RESULTS_PREFERENCE_KEY);
-      if (savedMaxResults) {
-        const parsed = parseInt(savedMaxResults, 10);
-        if (!isNaN(parsed) && parsed > 0) {
-          setMaxResults(parsed);
+        const savedMaxResults = localStorage.getItem(MAX_RESULTS_PREFERENCE_KEY);
+        if (savedMaxResults) {
+          const parsed = parseInt(savedMaxResults, 10);
+          if (!isNaN(parsed) && parsed > 0) {
+            setMaxResults(parsed);
+          }
         }
-      }
 
-      const savedMatchWholeWord = localStorage.getItem(MATCH_WHOLE_WORD_PREFERENCE_KEY);
-      if (savedMatchWholeWord !== null) {
-        setMatchWholeWord(savedMatchWholeWord === "true");
-      }
+        const savedMatchWholeWord = localStorage.getItem(MATCH_WHOLE_WORD_PREFERENCE_KEY);
+        if (savedMatchWholeWord !== null) {
+          setMatchWholeWord(savedMatchWholeWord === "true");
+        }
 
-      const savedMatchFolderNameOnly = localStorage.getItem(MATCH_FOLDER_NAME_ONLY_PREFERENCE_KEY);
-      if (savedMatchFolderNameOnly !== null) {
-        setMatchFolderNameOnly(savedMatchFolderNameOnly === "true");
+        const savedMatchFolderNameOnly = localStorage.getItem(MATCH_FOLDER_NAME_ONLY_PREFERENCE_KEY);
+        if (savedMatchFolderNameOnly !== null) {
+          setMatchFolderNameOnly(savedMatchFolderNameOnly === "true");
+        }
+      } catch (error) {
+        console.warn("加载 Everything 偏好失败", error);
       }
-    } catch (error) {
-      console.warn("加载 Everything 偏好失败", error);
-    }
+    };
+
+    loadPreferences();
   }, []);
 
   // 持久化偏好
@@ -183,13 +201,24 @@ export function EverythingSearchWindow() {
   }, [activeFilterId]);
 
   useEffect(() => {
-    try {
-      const serialized = JSON.stringify(customFilters);
-      localStorage.setItem(CUSTOM_FILTER_PREFERENCE_KEY, serialized);
-      console.log("自定义过滤器已自动保存:", customFilters);
-    } catch (error) {
-      console.error("自动保存自定义过滤器失败:", error);
-    }
+    // 自动保存到 SQLite（仅在非初始加载时）
+    const saveFilters = async () => {
+      try {
+        await tauriApi.saveEverythingCustomFilters(customFilters);
+        console.log("自定义过滤器已自动保存到数据库:", customFilters);
+        // 清除 localStorage 中的旧数据（如果存在）
+        localStorage.removeItem(CUSTOM_FILTER_PREFERENCE_KEY);
+      } catch (error) {
+        console.error("自动保存自定义过滤器到数据库失败:", error);
+      }
+    };
+
+    // 延迟保存，避免在初始加载时触发
+    const timer = setTimeout(() => {
+      saveFilters();
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, [customFilters]);
 
   useEffect(() => {
@@ -512,7 +541,7 @@ export function EverythingSearchWindow() {
     }
   };
 
-  const handleAddCustomFilter = () => {
+  const handleAddCustomFilter = async () => {
     const name = newFilterName.trim();
     const extList = newFilterExts
       .split(",")
@@ -547,31 +576,32 @@ export function EverythingSearchWindow() {
     setNewFilterName("");
     setNewFilterExts("");
     
-    // 立即保存到 localStorage，确保持久化
+    // 立即保存到 SQLite，确保持久化
     try {
-      const serialized = JSON.stringify(newFilters);
-      localStorage.setItem(CUSTOM_FILTER_PREFERENCE_KEY, serialized);
-      console.log("自定义过滤器已保存:", newFilters);
+      await tauriApi.saveEverythingCustomFilters(newFilters);
+      console.log("自定义过滤器已保存到数据库:", newFilters);
+      // 清除 localStorage 中的旧数据（如果存在）
+      localStorage.removeItem(CUSTOM_FILTER_PREFERENCE_KEY);
     } catch (error) {
-      console.error("保存自定义过滤器失败:", error);
-      // 即使保存失败，也继续执行，因为 useEffect 可能会重试
+      console.error("保存自定义过滤器到数据库失败:", error);
     }
   };
 
-  const handleRemoveCustomFilter = (id: string) => {
+  const handleRemoveCustomFilter = async (id: string) => {
     const newFilters = customFilters.filter((f) => f.id !== id);
     setCustomFilters(newFilters);
     if (activeFilterId === id) {
       setActiveFilterId("all");
     }
     
-    // 立即保存到 localStorage，确保持久化
+    // 立即保存到 SQLite，确保持久化
     try {
-      const serialized = JSON.stringify(newFilters);
-      localStorage.setItem(CUSTOM_FILTER_PREFERENCE_KEY, serialized);
-      console.log("自定义过滤器已删除并保存:", newFilters);
+      await tauriApi.saveEverythingCustomFilters(newFilters);
+      console.log("自定义过滤器已删除并保存到数据库:", newFilters);
+      // 清除 localStorage 中的旧数据（如果存在）
+      localStorage.removeItem(CUSTOM_FILTER_PREFERENCE_KEY);
     } catch (error) {
-      console.error("保存自定义过滤器失败:", error);
+      console.error("保存自定义过滤器到数据库失败:", error);
     }
   };
 

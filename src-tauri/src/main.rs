@@ -5,6 +5,7 @@ mod app_search;
 mod commands;
 mod error;
 mod everything_search;
+mod everything_filters;
 mod file_history;
 mod hooks;
 mod hotkey;
@@ -657,6 +658,8 @@ fn main() {
             get_settings,
             save_settings,
             show_settings_window,
+            get_everything_custom_filters,
+            save_everything_custom_filters,
             is_startup_enabled,
             set_startup_enabled,
             get_hotkey_config,

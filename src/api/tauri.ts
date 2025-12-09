@@ -150,6 +150,14 @@ export const tauriApi = {
     };
   },
 
+  async getEverythingCustomFilters(): Promise<Array<{ id: string; label: string; extensions: string[] }>> {
+    return invoke("get_everything_custom_filters");
+  },
+
+  async saveEverythingCustomFilters(filters: Array<{ id: string; label: string; extensions: string[] }>): Promise<void> {
+    return invoke("save_everything_custom_filters", { filters });
+  },
+
   async getIndexStatus(): Promise<IndexStatus> {
     return invoke("get_index_status");
   },
