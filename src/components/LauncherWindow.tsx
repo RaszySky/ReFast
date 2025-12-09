@@ -4158,14 +4158,14 @@ export function LauncherWindow() {
                     // Ensure input is focused, but don't select text if user is typing
                     e.target.focus();
                   }}
-                  onMouseDown={() => {
-                    // 只在真正点击输入框内容区域时才处理
-                    // 不阻止事件冒泡，让父级 data-tauri-drag-region 处理拖拽
+                  onMouseDown={(e) => {
+                    // 阻止事件冒泡，防止触发窗口拖拽
+                    // 输入框内应该只处理输入和文本选择，不应该触发窗口拖拽
+                    e.stopPropagation();
                     // Close context menu when clicking on search input
                     if (contextMenu) {
                       setContextMenu(null);
                     }
-                    // 允许事件继续冒泡，这样点击输入框边缘时父级可以处理拖拽
                   }}
                   onClick={(e) => {
                     // 点击输入框时，确保焦点正确，阻止事件冒泡避免触发其他操作
