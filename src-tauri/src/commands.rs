@@ -648,6 +648,7 @@ pub async fn search_applications(
     let cache = APP_CACHE.clone();
     let app_handle_clone = app.clone();
     let query_clone = query.clone();
+    let query_for_log = query.clone(); // 用于日志记录，避免被移动
     
     // 在后台线程执行搜索，避免阻塞 UI
     // 需要提前克隆 cache，因为闭包会移动它
@@ -768,6 +769,7 @@ pub async fn search_applications(
     let cache_clone = cache.clone();
     let app_handle_for_emit = app_handle_clone.clone();
     let app_handle_for_save = app_handle_clone.clone();
+    
     let results_paths: Vec<String> = results
         .iter()
         .filter(|r| r.icon.is_none())
@@ -1015,6 +1017,40 @@ pub async fn debug_app_icon(app_name: String, app: tauri::AppHandle) -> Result<S
     })
     .await
     .map_err(|e| format!("debug_app_icon join error: {}", e))?
+}
+
+/// 从文件路径提取图标（用于动态提取不在应用列表中的应用图标）
+#[tauri::command]
+pub async fn extract_icon_from_path(file_path: String) -> Result<Option<String>, String> {
+    use std::path::Path;
+    
+    // 在后台线程执行耗时操作，避免阻塞 UI
+    async_runtime::spawn_blocking(move || {
+        let path = Path::new(&file_path);
+        let path_lower = file_path.to_lowercase();
+        
+        let icon = if path_lower.starts_with("shell:appsfolder\\") {
+            // UWP app - extract icon using special method
+            app_search::windows::extract_uwp_app_icon_base64(&file_path)
+        } else {
+            let ext = path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_lowercase());
+            
+            if ext == Some("lnk".to_string()) {
+                app_search::windows::extract_lnk_icon_base64(path)
+            } else if ext == Some("exe".to_string()) {
+                app_search::windows::extract_icon_base64(path)
+            } else {
+                None
+            }
+        };
+        
+        Ok(icon)
+    })
+    .await
+    .map_err(|e| format!("extract_icon_from_path join error: {}", e))?
 }
 
 /// 设置 launcher 窗口位置（居中但稍微偏上）

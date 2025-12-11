@@ -1530,19 +1530,24 @@ export function LauncherWindow() {
           return !filteredApps.some(app => app.path === everything.path) &&
                  !filteredFiles.some(file => file.path === everything.path);
         })
-        .map((everything): SearchResult => ({
-          type: "app" as const,
-          app: {
-            name: everything.name,
+        .map((everything): SearchResult => {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LauncherWindow.tsx:1533',message:'从Everything结果构建app类型结果',data:{name:everything.name,path:everything.path,isInFilteredApps:filteredApps.some(app => app.path === everything.path),isInFilteredFiles:filteredFiles.some(file => file.path === everything.path)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+          return {
+            type: "app" as const,
+            app: {
+              name: everything.name,
+              path: everything.path,
+              icon: undefined, // 图标将在渲染时尝试从应用列表获取
+              description: undefined,
+              name_pinyin: undefined,
+              name_pinyin_initials: undefined,
+            },
+            displayName: everything.name,
             path: everything.path,
-            icon: undefined, // 图标将在渲染时尝试从应用列表获取
-            description: undefined,
-            name_pinyin: undefined,
-            name_pinyin_initials: undefined,
-          },
-          displayName: everything.name,
-          path: everything.path,
-        })),
+          };
+        }),
       // 普通 Everything 结果（非可执行文件）
       ...everythingResults
         .filter((everything) => {

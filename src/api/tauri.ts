@@ -80,6 +80,10 @@ export const tauriApi = {
     return invoke("debug_app_icon", { appName });
   },
 
+  async extractIconFromPath(filePath: string): Promise<string | null> {
+    return invoke("extract_icon_from_path", { filePath });
+  },
+
   async toggleLauncher(): Promise<void> {
     return invoke("toggle_launcher");
   },

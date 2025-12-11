@@ -12,6 +12,7 @@ mod hotkey;
 mod hotkey_handler;
 // mod keyboard_hook; // 已不再需要，hotkey_handler 已支持双击修饰键
 mod db;
+mod logger;
 mod plugin_usage;
 mod memos;
 mod open_history;
@@ -543,6 +544,16 @@ fn main() {
                 windows::init_log_file_early();
             }
 
+            // Initialize logger module on startup to ensure log file is created
+            #[cfg(target_os = "windows")]
+            {
+                use crate::logger;
+                logger::init_log_file_early();
+                if let Some(log_path) = logger::get_log_file_path() {
+                    eprintln!("[Main] Logger log file: {}", log_path.display());
+                }
+            }
+
             // Load app cache on startup and start background scan
             let app_data_dir_clone = app_data_dir.clone();
             std::thread::spawn(move || {
@@ -596,6 +607,7 @@ fn main() {
             launch_application,
             remove_app_from_index,
             debug_app_icon,
+            extract_icon_from_path,
             toggle_launcher,
             hide_launcher,
             add_file_to_history,

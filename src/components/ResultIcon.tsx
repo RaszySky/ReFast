@@ -1,6 +1,8 @@
+import { useState, useEffect } from "react";
 import type { AppInfo, FileHistoryItem, EverythingResult, MemoItem, SystemFolderItem } from "../types";
 import type { ThemeConfig, ResultStyle } from "../utils/themeConfig";
 import { isFolderLikePath } from "../utils/launcherUtils";
+import { tauriApi } from "../api/tauri";
 
 type SearchResult = {
   type: "app" | "file" | "everything" | "url" | "email" | "memo" | "plugin" | "system_folder" | "history" | "ai" | "json_formatter" | "settings";
@@ -121,7 +123,49 @@ export function ResultIcon({
       const matchedApp = apps.find((app) => app.path === result.path);
       if (matchedApp && matchedApp.icon) {
         iconToUse = matchedApp.icon;
+      } else {
+        // 如果 apps 中找不到，尝试从 filteredApps 中查找
+        const matchedFilteredApp = filteredApps.find((app) => app.path === result.path);
+        if (matchedFilteredApp && matchedFilteredApp.icon) {
+          iconToUse = matchedFilteredApp.icon;
+        }
       }
+    }
+
+    // 如果仍然找不到图标，且路径是 .exe 或 .lnk 文件，尝试动态提取图标
+    const [extractedIcon, setExtractedIcon] = useState<string | null>(null);
+    const pathLower = (result.path || '').toLowerCase();
+    const isExeOrLnk = pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
+    
+    useEffect(() => {
+      if (!iconToUse && !extractedIcon && result.path && isExeOrLnk) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:extract',message:'开始动态提取图标',data:{path:result.path},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        tauriApi.extractIconFromPath(result.path)
+          .then((icon) => {
+            if (icon) {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:extract',message:'图标提取成功',data:{path:result.path,iconLength:icon.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+              // #endregion
+              setExtractedIcon(icon);
+            } else {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:extract',message:'图标提取失败',data:{path:result.path},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+              // #endregion
+            }
+          })
+          .catch((err) => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:extract',message:'图标提取异常',data:{path:result.path,error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+          });
+      }
+    }, [iconToUse, extractedIcon, result.path, isExeOrLnk]);
+
+    // 使用提取的图标（如果可用）
+    if (!iconToUse && extractedIcon) {
+      iconToUse = extractedIcon;
     }
 
     if (iconToUse) {
@@ -363,8 +407,15 @@ export function ResultIcon({
     const isLnkOrExe = filePath.toLowerCase().endsWith(".lnk") || filePath.toLowerCase().endsWith(".exe");
     
     if (isLnkOrExe) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:365',message:'处理文件/Everything的exe/lnk图标',data:{type:result.type,filePath:filePath,filteredAppsSearchResult:filteredApps.find((app) => app.path === filePath)?.icon?'found':'not_found',appsSearchResult:apps.find((app) => app.path === filePath)?.icon?'found':'not_found'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       // 尝试在应用列表中查找匹配的应用（通过路径匹配）
-      const matchedApp = filteredApps.find((app) => app.path === filePath);
+      let matchedApp = filteredApps.find((app) => app.path === filePath);
+      if (!matchedApp || !matchedApp.icon) {
+        // 如果 filteredApps 中找不到，尝试从 apps 中查找
+        matchedApp = apps.find((app) => app.path === filePath);
+      }
       if (matchedApp && matchedApp.icon) {
         return (
           <img

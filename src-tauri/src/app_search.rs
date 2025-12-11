@@ -21,7 +21,9 @@ pub mod windows {
     use base64::Engine;
     use pinyin::ToPinyin;
     use std::env;
-    use std::os::windows::process::CommandExt;    // Cache file name
+    use std::os::windows::process::CommandExt;
+    
+    // Cache file name
     pub fn get_cache_file_path(app_data_dir: &Path) -> PathBuf {
         app_data_dir.join("app_cache.json")
     }
@@ -614,9 +616,74 @@ try {
         None
     }
     
+    // Extract icon from .exe file using Native Windows API
+    // This is more reliable than PowerShell method for some exe files (like v2rayN.exe)
+    fn extract_exe_icon_base64_native(file_path: &Path) -> Option<String> {
+        let file_path_str = file_path.to_string_lossy().to_string();
+        
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+        use windows_sys::Win32::UI::Shell::ExtractIconExW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::DestroyIcon;
+
+        // 初始化 COM（单线程模式，用于 COM 接口）
+        unsafe {
+            let hr = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED as u32);
+            if hr < 0 {
+                return None;
+            }
+        }
+
+        let result = (|| -> Option<String> {
+            // 使用 ExtractIconExW 从 exe 文件提取图标
+            let file_path_wide: Vec<u16> = OsStr::new(file_path)
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+
+            unsafe {
+                // 首先尝试索引 0（默认图标）
+                let mut large_icons: [isize; 1] = [0; 1];
+                let count = ExtractIconExW(
+                    file_path_wide.as_ptr(),
+                    0,
+                    large_icons.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                    1,
+                );
+
+                if count > 0 && large_icons[0] != 0 {
+                    if let Some(png_data) = icon_to_png(large_icons[0]) {
+                        DestroyIcon(large_icons[0]);
+                        return Some(format!("data:image/png;base64,{}", png_data));
+                    }
+                    DestroyIcon(large_icons[0]);
+                }
+            }
+
+            None
+        })();
+
+        // 清理 COM
+        unsafe {
+            CoUninitialize();
+        }
+
+        result
+    }
+
     // Extract icon from file and convert to base64 PNG
     // Uses PowerShell with parameter passing to avoid encoding issues
+    // Now tries Native API first, falls back to PowerShell if Native API fails
     pub fn extract_icon_base64(file_path: &Path) -> Option<String> {
+        let file_path_str = file_path.to_string_lossy().to_string();
+        
+        // 首先尝试 Native API 方法（更可靠，特别是对于某些 exe 文件如 v2rayN.exe）
+        if let Some(result) = extract_exe_icon_base64_native(file_path) {
+            return Some(result);
+        }
+        // 如果 Native API 失败，回退到 PowerShell 方法
         // Convert path to UTF-16 bytes for PowerShell parameter
         let path_utf16: Vec<u16> = file_path.to_string_lossy().encode_utf16().collect();
         let path_base64 = base64::engine::general_purpose::STANDARD.encode(
@@ -702,6 +769,7 @@ try {
                 return Some(format!("data:image/png;base64,{}", base64));
             }
         }
+        
         None
     }
 
