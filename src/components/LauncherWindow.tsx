@@ -3075,10 +3075,6 @@ export function LauncherWindow() {
       }>("everything-search-batch", (event) => {
         const { results: batchResults, total_count, current_count } = event.payload;
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H1',location:'LauncherWindow.tsx:batch',message:'batch event received',data:{batchLen:batchResults?.length ?? 0,total_count,current_count,cancelled:currentSearchRef.current?.cancelled ?? null,currentQuery:currentSearchRef.current?.query ?? null,finalResultsSet:finalResultsSetRef.current},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-
         // 搜索已取消，忽略本批次
         if (currentSearchRef.current?.cancelled) {
           return;
@@ -3231,10 +3227,6 @@ export function LauncherWindow() {
               uniqueResults.push(result);
             }
           }
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H3',location:'LauncherWindow.tsx:processResults',message:'processing final results',data:{uniqueLen:uniqueResults.length,total_count:response.total_count,currentQuery:currentSearchRef.current?.query ?? null,cancelled:currentSearchRef.current?.cancelled ?? null},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
 
           setEverythingResults(uniqueResults);
           setEverythingTotalCount(response.total_count);

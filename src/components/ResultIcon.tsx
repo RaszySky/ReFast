@@ -73,20 +73,9 @@ export function ResultIcon({
   const isLnkOrExe = filePath.toLowerCase().endsWith(".lnk") || filePath.toLowerCase().endsWith(".exe");
   const isFileTypeNeedingIcon = (result.type === "file" || result.type === "everything" || result.type === "system_folder") && isLnkOrExe;
   
-  // #region agent log - 只记录 MSYS2 相关的结果
-  if (filePath.includes('MSYS2') || result.displayName.includes('MSYS2')) {
-    fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:67',message:'ResultIcon render - MSYS2 file',data:{resultType:result.type,filePath:filePath,isLnkOrExe:isLnkOrExe,isFileTypeNeedingIcon:isFileTypeNeedingIcon,displayName:result.displayName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  }
-  // #endregion
-  
   // 当 filePath 改变时，重置提取的图标
   useEffect(() => {
     if (previousFilePathRef.current !== filePath) {
-      // #region agent log - 只记录 MSYS2 相关
-      if (filePath.includes('MSYS2')) {
-        fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:75',message:'File path changed - resetting icon',data:{previousPath:previousFilePathRef.current,newPath:filePath},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      }
-      // #endregion
       previousFilePathRef.current = filePath;
       setExtractedFileIcon(null);
     }
@@ -94,45 +83,20 @@ export function ResultIcon({
   
   // 对于 file、everything、system_folder 类型的 .lnk/.exe 文件，如果没有图标，尝试动态提取
   useEffect(() => {
-    // #region agent log - 只记录 MSYS2 相关
-    if (filePath.includes('MSYS2')) {
-      fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:82',message:'useEffect for icon extraction - entry',data:{isFileTypeNeedingIcon:isFileTypeNeedingIcon,extractedFileIcon:extractedFileIcon,filePath:filePath},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    }
-    // #endregion
     if (isFileTypeNeedingIcon && !extractedFileIcon && filePath) {
       // 先检查是否在应用列表中有图标（使用规范化路径比较）
       const normalizedFilePath = normalizePathForComparison(filePath);
       const matchedApp = filteredApps.find((app) => normalizePathForComparison(app.path) === normalizedFilePath) || 
                          apps.find((app) => normalizePathForComparison(app.path) === normalizedFilePath);
-      // #region agent log - 只记录 MSYS2 相关
-      if (filePath.includes('MSYS2')) {
-        fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:87',message:'Checking app list for icon',data:{filePath:filePath,matchedAppFound:!!matchedApp,matchedAppIcon:matchedApp?.icon ? 'exists' : 'null',filteredAppsCount:filteredApps.length,appsCount:apps.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      }
-      // #endregion
       if (!matchedApp || !matchedApp.icon) {
         // 如果应用列表中没有图标，尝试动态提取
-        // #region agent log - 只记录 MSYS2 相关
-        if (filePath.includes('MSYS2')) {
-          fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:91',message:'Calling extractIconFromPath',data:{filePath:filePath},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        }
-        // #endregion
         tauriApi.extractIconFromPath(filePath)
           .then((icon) => {
-            // #region agent log - 只记录 MSYS2 相关
-            if (filePath.includes('MSYS2')) {
-              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:95',message:'extractIconFromPath success',data:{filePath:filePath,iconReceived:!!icon,iconLength:icon?.length || 0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            }
-            // #endregion
             if (icon) {
               setExtractedFileIcon(icon);
             }
           })
           .catch((error) => {
-            // #region agent log - 只记录 MSYS2 相关
-            if (filePath.includes('MSYS2')) {
-              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:100',message:'extractIconFromPath error',data:{filePath:filePath,error:error?.message || String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            }
-            // #endregion
             // 忽略错误，使用默认图标
           });
       }
@@ -203,29 +167,14 @@ export function ResultIcon({
     if (iconToUse && iconToUse.trim() === '') {
       iconToUse = undefined;
     }
-    // #region agent log - 只记录 MSYS2 相关
-    if (result.path.includes('MSYS2')) {
-      fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:181',message:'App type - initial iconToUse check',data:{path:result.path,resultAppIcon:result.app?.icon ? 'exists' : 'null',iconToUseAfterCheck:iconToUse ? 'exists' : 'null',iconLength:iconToUse?.length || 0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-    }
-    // #endregion
     if (!iconToUse && result.path) {
       const normalizedResultPath = normalizePathForComparison(result.path);
       const matchedApp = apps.find((app) => normalizePathForComparison(app.path) === normalizedResultPath);
-      // #region agent log - 只记录 MSYS2 相关
-      if (result.path.includes('MSYS2')) {
-        fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:186',message:'App type - checking apps list',data:{path:result.path,matchedAppFound:!!matchedApp,matchedAppIcon:matchedApp?.icon ? 'exists' : 'null',appsCount:apps.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-      }
-      // #endregion
       if (matchedApp && matchedApp.icon) {
         iconToUse = matchedApp.icon;
       } else {
         // 如果 apps 中找不到，尝试从 filteredApps 中查找
         const matchedFilteredApp = filteredApps.find((app) => normalizePathForComparison(app.path) === normalizedResultPath);
-        // #region agent log - 只记录 MSYS2 相关
-        if (result.path.includes('MSYS2')) {
-          fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:192',message:'App type - checking filteredApps list',data:{path:result.path,matchedFilteredAppFound:!!matchedFilteredApp,matchedFilteredAppIcon:matchedFilteredApp?.icon ? 'exists' : 'null',filteredAppsCount:filteredApps.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-        }
-        // #endregion
         if (matchedFilteredApp && matchedFilteredApp.icon) {
           iconToUse = matchedFilteredApp.icon;
         }
@@ -236,12 +185,6 @@ export function ResultIcon({
     const [extractedIcon, setExtractedIcon] = useState<string | null>(null);
     const pathLower = (result.path || '').toLowerCase();
     const isExeOrLnk = pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
-    
-    // #region agent log - 只记录 MSYS2 相关
-    if (result.path.includes('MSYS2')) {
-      fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:202',message:'App type - before useEffect',data:{path:result.path,iconToUse:iconToUse ? 'exists' : 'null',extractedIcon:extractedIcon ? 'exists' : 'null',isExeOrLnk:isExeOrLnk},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-    }
-    // #endregion
     
     useEffect(() => {
       // 在 useEffect 内部重新计算 iconToUse，因为它在渲染时计算，不应该作为依赖项
@@ -263,35 +206,14 @@ export function ResultIcon({
         }
       }
       
-      // #region agent log - 只记录 MSYS2 相关
-      if (result.path.includes('MSYS2')) {
-        fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:217',message:'App type - useEffect entry',data:{path:result.path,currentIconToUse:currentIconToUse ? 'exists' : 'null',extractedIcon:extractedIcon ? 'exists' : 'null',isExeOrLnk:isExeOrLnk},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-      }
-      // #endregion
-      
       if (!currentIconToUse && !extractedIcon && result.path && isExeOrLnk) {
-        // #region agent log - 只记录 MSYS2 相关
-        if (result.path.includes('MSYS2')) {
-          fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:225',message:'App type - Calling extractIconFromPath',data:{path:result.path,currentIconToUse:currentIconToUse ? 'exists' : 'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-        }
-        // #endregion
         tauriApi.extractIconFromPath(result.path)
           .then((icon) => {
-            // #region agent log - 只记录 MSYS2 相关
-            if (result.path.includes('MSYS2')) {
-              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:231',message:'App type - extractIconFromPath success',data:{path:result.path,iconReceived:!!icon,iconLength:icon?.length || 0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-            }
-            // #endregion
             if (icon) {
               setExtractedIcon(icon);
             }
           })
           .catch((error) => {
-            // #region agent log - 只记录 MSYS2 相关
-            if (result.path.includes('MSYS2')) {
-              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:239',message:'App type - extractIconFromPath error',data:{path:result.path,error:error?.message || String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-            }
-            // #endregion
             // 忽略错误，使用默认图标
           });
       }
@@ -301,13 +223,6 @@ export function ResultIcon({
     if (!iconToUse && extractedIcon) {
       iconToUse = extractedIcon;
     }
-    
-    // #region agent log - 只记录 MSYS2 相关
-    if (result.path.includes('MSYS2')) {
-      const iconPreview = iconToUse ? (iconToUse.startsWith('data:') ? iconToUse.substring(0, 50) + '...' : iconToUse.substring(0, 50)) : 'null';
-      fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:238',message:'App type - final iconToUse check',data:{path:result.path,iconToUse:iconToUse ? 'exists' : 'null',iconPreview:iconPreview,iconLength:iconToUse?.length || 0,extractedIcon:extractedIcon ? 'exists' : 'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-    }
-    // #endregion
 
     if (iconToUse) {
       return (
@@ -316,26 +231,7 @@ export function ResultIcon({
           alt={result.displayName}
           className={`${iconSize} object-contain`}
           style={{ imageRendering: "auto" as const }}
-          ref={(img) => {
-            // #region agent log - 只记录 MSYS2 相关
-            if (result.path.includes('MSYS2') && img) {
-              setTimeout(() => {
-                const rect = img.getBoundingClientRect();
-                const computedStyle = window.getComputedStyle(img);
-                const parent = img.parentElement;
-                const parentRect = parent ? parent.getBoundingClientRect() : null;
-                const parentStyle = parent ? window.getComputedStyle(parent) : null;
-                fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:297',message:'App type - Image ref callback with parent',data:{path:result.path,imgWidth:rect.width,imgHeight:rect.height,imgDisplay:computedStyle.display,imgVisibility:computedStyle.visibility,imgOpacity:computedStyle.opacity,imgClassName:img.className,parentWidth:parentRect?.width,parentHeight:parentRect?.height,parentDisplay:parentStyle?.display,parentVisibility:parentStyle?.visibility,parentOverflow:parentStyle?.overflow,parentClassName:parent?.className},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
-              }, 100);
-            }
-            // #endregion
-          }}
           onError={(e) => {
-            // #region agent log - 只记录 MSYS2 相关
-            if (result.path.includes('MSYS2')) {
-              fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:310',message:'App type - Image load error',data:{path:result.path,iconSrc:iconToUse.substring(0, 100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-            }
-            // #endregion
             const target = e.target as HTMLImageElement;
             target.style.display = "none";
             const parent = target.parentElement;
@@ -364,18 +260,6 @@ export function ResultIcon({
               svg.appendChild(path);
               parent.appendChild(svg);
             }
-          }}
-          onLoad={() => {
-            // #region agent log - 只记录 MSYS2 相关
-            if (result.path.includes('MSYS2')) {
-              const img = document.querySelector(`img[alt="${result.displayName}"]`) as HTMLImageElement;
-              if (img) {
-                const rect = img.getBoundingClientRect();
-                const computedStyle = window.getComputedStyle(img);
-                fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:345',message:'App type - Image load success with dimensions',data:{path:result.path,width:rect.width,height:rect.height,display:computedStyle.display,visibility:computedStyle.visibility,opacity:computedStyle.opacity},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-              }
-            }
-            // #endregion
           }}
         />
       );
@@ -578,12 +462,6 @@ export function ResultIcon({
     const filePath = result.path || "";
     const isLnkOrExe = filePath.toLowerCase().endsWith(".lnk") || filePath.toLowerCase().endsWith(".exe");
     
-    // #region agent log - 只记录 MSYS2 相关
-    if (filePath.includes('MSYS2')) {
-      fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:433',message:'Rendering file/everything/system_folder icon',data:{resultType:result.type,filePath:filePath,isLnkOrExe:isLnkOrExe,extractedFileIcon:extractedFileIcon ? 'exists' : 'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    }
-    // #endregion
-    
     if (isLnkOrExe) {
       // 尝试在应用列表中查找匹配的应用（通过规范化路径匹配）
       const normalizedFilePath = normalizePathForComparison(filePath);
@@ -596,12 +474,6 @@ export function ResultIcon({
       // 优先使用应用列表中的图标，如果没有则使用动态提取的图标
       const iconToUse = matchedApp?.icon || extractedFileIcon;
       
-      // #region agent log - 只记录 MSYS2 相关
-      if (filePath.includes('MSYS2')) {
-        fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:445',message:'Icon selection for lnk/exe file',data:{filePath:filePath,matchedAppIcon:matchedApp?.icon ? 'exists' : 'null',extractedFileIcon:extractedFileIcon ? 'exists' : 'null',iconToUse:iconToUse ? 'exists' : 'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-      }
-      // #endregion
-      
       if (iconToUse) {
         return (
           <img
@@ -610,11 +482,6 @@ export function ResultIcon({
             className="w-8 h-8 object-contain"
             style={{ imageRendering: "auto" as const }}
             onError={(e) => {
-              // #region agent log - 只记录 MSYS2 相关
-              if (filePath.includes('MSYS2')) {
-                fetch('http://127.0.0.1:7242/ingest/7b6f7af1-8135-4973-8f41-60f30b037947',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ResultIcon.tsx:454',message:'Image load error',data:{filePath:filePath,iconSrc:iconToUse.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-              }
-              // #endregion
               const target = e.target as HTMLImageElement;
               target.style.display = "none";
               const parent = target.parentElement;
