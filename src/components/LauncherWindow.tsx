@@ -1345,10 +1345,8 @@ export function LauncherWindow() {
       // Everything 搜索是异步的，立即启动不会阻塞
       // 其他搜索延迟执行，避免与 Everything 搜索竞争资源
       
-      // 应用搜索暂时禁用（需要获取 APP_CACHE 锁，影响性能）
-      // setTimeout(() => {
-      //   searchApplications(trimmedQuery);
-      // }, 200);
+      // 应用搜索立即执行（已优化：使用 spawn_blocking 在后台线程执行）
+      searchApplications(trimmedQuery);
       
       // 备忘录和插件搜索是纯前端过滤，延迟较短
       setTimeout(() => {
