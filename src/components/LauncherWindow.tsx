@@ -3572,7 +3572,8 @@ export function LauncherWindow() {
 
         pendingSessionIdRef.current = session.sessionId;
         creatingSessionQueryRef.current = null;
-        setEverythingTotalCount(Math.min(session.totalCount ?? 0, maxResultsToUse));
+        // 保存针对该关键字查询到的实际总数（不受maxResults限制）
+        setEverythingTotalCount(session.totalCount ?? 0);
 
         // 立即获取第一页结果（启动器只需要第一页）
         const offset = 0;
@@ -5336,7 +5337,7 @@ export function LauncherWindow() {
                         </svg>
                         <span>
                           Everything: {everythingTotalCount !== null 
-                            ? `找到 ${everythingTotalCount.toLocaleString()} 个结果` 
+                            ? `一共查到 ${everythingTotalCount.toLocaleString()} 个结果`
                             : everythingResults.length > 0
                             ? `找到 ${everythingResults.length.toLocaleString()} 个结果`
                             : "无结果"}
