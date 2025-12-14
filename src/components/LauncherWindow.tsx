@@ -1935,6 +1935,31 @@ export function LauncherWindow() {
       const toSort = regularResults.slice(0, MAX_SORT_COUNT);
       const rest = regularResults.slice(MAX_SORT_COUNT);
       
+      // 调试：输出排序前的应用列表
+      if (query.trim()) {
+        const appResultsBeforeSort = toSort.filter(r => r.type === "app");
+        if (appResultsBeforeSort.length > 0) {
+          console.log(`\n[排序调试-排序前] 查询: "${query}", 应用数量: ${appResultsBeforeSort.length}`);
+          appResultsBeforeSort.forEach((result, index) => {
+            const useCount = result.file?.use_count ?? 0;
+            const lastUsed = result.file?.last_used || openHistory[result.path] || 0;
+            const score = calculateRelevanceScore(
+              result.displayName,
+              result.path,
+              query,
+              useCount,
+              lastUsed,
+              result.type === "everything",
+              result.type === "app",
+              result.app?.name_pinyin,
+              result.app?.name_pinyin_initials,
+              result.type === "file"
+            );
+            console.log(`  [${index + 1}] ${result.displayName} - 评分: ${score}`);
+          });
+        }
+      }
+      
       toSort.sort((a, b) => {
         // 获取使用频率和最近使用时间
         const aUseCount = a.file?.use_count;
@@ -1967,6 +1992,11 @@ export function LauncherWindow() {
           b.app?.name_pinyin_initials,  // 新增：应用拼音首字母
           b.type === "file"  // 新增：标识是否是历史文件
         );
+        
+        // 调试：输出排序比较过程
+        if (query.trim() && a.type === "app" && b.type === "app") {
+          console.log(`[排序比较] "${a.displayName}" (${aScore}) vs "${b.displayName}" (${bScore}) => ${bScore - aScore > 0 ? a.displayName : b.displayName} 在前`);
+        }
 
         // Everything 内部快捷方式 (.lnk) 优先
         if (a.type === "everything" && b.type === "everything") {
@@ -2000,7 +2030,54 @@ export function LauncherWindow() {
       
       // 重新组合：特殊类型 + 所有插件 + 排序后的前部分 + 未排序的后部分
       otherResults = [...specialResults, ...pluginResults, ...toSort, ...rest];
+      
+      // 调试：输出应用列表中每个item的使用频率
+      if (query.trim()) {
+        const appResults = otherResults.filter(r => r.type === "app");
+        if (appResults.length > 0) {
+          console.log(`[应用搜索调试] 查询: "${query}", 找到 ${appResults.length} 个应用:`);
+          appResults.forEach((result, index) => {
+            const useCount = result.file?.use_count ?? 0;
+            const lastUsed = result.file?.last_used ?? openHistory[result.path] ?? 0;
+            const lastUsedDate = lastUsed ? new Date(lastUsed * 1000).toLocaleString() : "从未使用";
+            const normalizedPath = result.path.toLowerCase().replace(/\\/g, "/");
+            const hasFileHistory = result.file !== undefined;
+            console.log(`  [${index + 1}] ${result.displayName}`);
+            console.log(`      路径: ${result.path}`);
+            console.log(`      标准化路径: ${normalizedPath}`);
+            console.log(`      使用次数: ${useCount}`);
+            console.log(`      最近使用: ${lastUsedDate} (${lastUsed})`);
+            console.log(`      是否有关联的文件历史: ${hasFileHistory}`);
+            console.log(`      文件历史数据:`, result.file);
+          });
+        }
+      }
     } else {
+      // 调试：输出排序前的应用列表
+      if (query.trim()) {
+        const appResultsBeforeSort = otherResults.filter(r => r.type === "app");
+        if (appResultsBeforeSort.length > 0) {
+          console.log(`\n[排序调试-排序前(else分支)] 查询: "${query}", 应用数量: ${appResultsBeforeSort.length}`);
+          appResultsBeforeSort.forEach((result, index) => {
+            const useCount = result.file?.use_count ?? 0;
+            const lastUsed = result.file?.last_used || openHistory[result.path] || 0;
+            const score = calculateRelevanceScore(
+              result.displayName,
+              result.path,
+              query,
+              useCount,
+              lastUsed,
+              result.type === "everything",
+              result.type === "app",
+              result.app?.name_pinyin,
+              result.app?.name_pinyin_initials,
+              result.type === "file"
+            );
+            console.log(`  [${index + 1}] ${result.displayName} - 评分: ${score}`);
+          });
+        }
+      }
+      
       // 结果数量较少时，直接排序所有结果
       otherResults.sort((a, b) => {
         // 特殊类型的结果保持最高优先级（AI、历史、设置等）
@@ -2114,6 +2191,31 @@ export function LauncherWindow() {
         if (a.type === "everything" && b.type === "file") return 1; // 历史文件优先于 Everything
         return bLastUsed - aLastUsed;
       });
+      
+      // 调试：输出排序后的应用列表
+      if (query.trim()) {
+        const appResultsAfterSort = otherResults.filter(r => r.type === "app");
+        if (appResultsAfterSort.length > 0) {
+          console.log(`\n[排序调试-排序后(else分支)] 查询: "${query}", 应用数量: ${appResultsAfterSort.length}`);
+          appResultsAfterSort.forEach((result, index) => {
+            const useCount = result.file?.use_count ?? 0;
+            const lastUsed = result.file?.last_used || openHistory[result.path] || 0;
+            const score = calculateRelevanceScore(
+              result.displayName,
+              result.path,
+              query,
+              useCount,
+              lastUsed,
+              result.type === "everything",
+              result.type === "app",
+              result.app?.name_pinyin,
+              result.app?.name_pinyin_initials,
+              result.type === "file"
+            );
+            console.log(`  [${index + 1}] ${result.displayName} - 评分: ${score}`);
+          });
+        }
+      }
     }
     
     // 提取所有插件，放在最前面
@@ -2130,6 +2232,52 @@ export function LauncherWindow() {
       ? [...pluginResults, ...jsonFormatterResult, ...urlResults, ...emailResults, ...otherResultsWithoutPlugins]
       : [...pluginResults, ...urlResults, ...emailResults, ...jsonFormatterResult, ...otherResultsWithoutPlugins];
     
+    // 调试：输出应用列表中每个item的使用频率
+    if (query.trim()) {
+      const appResults = finalResults.filter(r => r.type === "app");
+      if (appResults.length > 0) {
+        console.log(`\n[应用搜索调试] ========== 查询: "${query}" ==========`);
+        console.log(`找到 ${appResults.length} 个应用:`);
+        appResults.forEach((result, index) => {
+          const useCount = result.file?.use_count ?? 0;
+          const lastUsed = result.file?.last_used ?? openHistory[result.path] ?? 0;
+          const lastUsedDate = lastUsed ? new Date(lastUsed * 1000).toLocaleString('zh-CN') : "从未使用";
+          const normalizedPath = result.path.toLowerCase().replace(/\\/g, "/");
+          const hasFileHistory = result.file !== undefined;
+          const score = calculateRelevanceScore(
+            result.displayName,
+            result.path,
+            query,
+            useCount,
+            lastUsed,
+            result.type === "everything",
+            result.type === "app",
+            result.app?.name_pinyin,
+            result.app?.name_pinyin_initials,
+            result.type === "file"
+          );
+          console.log(`  [${index + 1}] ${result.displayName}`);
+          console.log(`      路径: ${result.path}`);
+          console.log(`      标准化路径: ${normalizedPath}`);
+          console.log(`      使用次数: ${useCount}`);
+          console.log(`      最近使用: ${lastUsedDate} (时间戳: ${lastUsed})`);
+          console.log(`      是否有关联的文件历史: ${hasFileHistory}`);
+          console.log(`      相关性评分: ${score}`);
+          if (result.file) {
+            console.log(`      文件历史数据:`, {
+              path: result.file.path,
+              name: result.file.name,
+              use_count: result.file.use_count,
+              last_used: result.file.last_used,
+              is_folder: result.file.is_folder
+            });
+          } else {
+            console.log(`      文件历史数据: null (未找到)`);
+          }
+        });
+        console.log(`[应用搜索调试] ==========================================\n`);
+      }
+    }
     
     return finalResults;
   }, [filteredApps, filteredFiles, filteredMemos, filteredPlugins, everythingResults, detectedUrls, detectedEmails, detectedJson, openHistory, query, aiAnswer]);
@@ -2141,7 +2289,7 @@ export function LauncherWindow() {
   }, [query]);
 
   // Helper function to split results into horizontal and vertical
-  const splitResults = (allResults: SearchResult[], openHistoryData: Record<string, number> = {}) => {
+  const splitResults = (allResults: SearchResult[], openHistoryData: Record<string, number> = {}, searchQuery: string = "") => {
     const executableResults = allResults.filter(result => {
       if (result.type === "app") {
         const pathLower = result.path.toLowerCase();
@@ -2257,7 +2405,8 @@ export function LauncherWindow() {
     const pluginResults = allResults.filter(result => result.type === "plugin");
     const horizontalUnsorted = [...deduplicatedExecutableResults, ...systemFolderResults, ...pluginResults];
     
-    // 对横向列表按使用频率和最近使用时间排序
+    // 对横向列表按相关性评分、使用频率和最近使用时间排序
+    // 对横向列表按相关性评分、使用频率和最近使用时间排序
     const horizontal = horizontalUnsorted.sort((a, b) => {
       // 插件始终在最前面
       if (a.type === "plugin" && b.type !== "plugin") return -1;
@@ -2270,7 +2419,40 @@ export function LauncherWindow() {
       const bUseCount = b.app?.name ? undefined : (b.file?.use_count);
       const bLastUsed = b.app?.name ? undefined : (b.file?.last_used || openHistoryData[b.path] || 0);
       
-      // 优先按最近使用时间排序（最近使用的在前）
+      // 如果有查询，优先按相关性评分排序（评分高的在前）
+      if (searchQuery.trim()) {
+        const aScore = calculateRelevanceScore(
+          a.displayName,
+          a.path,
+          searchQuery,
+          aUseCount,
+          aLastUsed,
+          a.type === "everything",
+          a.type === "app",
+          a.app?.name_pinyin,
+          a.app?.name_pinyin_initials,
+          a.type === "file"
+        );
+        const bScore = calculateRelevanceScore(
+          b.displayName,
+          b.path,
+          searchQuery,
+          bUseCount,
+          bLastUsed,
+          b.type === "everything",
+          b.type === "app",
+          b.app?.name_pinyin,
+          b.app?.name_pinyin_initials,
+          b.type === "file"
+        );
+        
+        // 如果评分不同，按评分降序排序
+        if (bScore !== aScore) {
+          return bScore - aScore;
+        }
+      }
+      
+      // 其次按最近使用时间排序（最近使用的在前）
       if (aLastUsed && bLastUsed) {
         if (aLastUsed !== bLastUsed) {
           return bLastUsed - aLastUsed; // 降序：最近使用的在前
@@ -2281,7 +2463,7 @@ export function LauncherWindow() {
         return 1; // b 有使用记录，a 没有，b 在前
       }
       
-      // 其次按使用频率排序（使用次数多的在前）
+      // 再次按使用频率排序（使用次数多的在前）
       if (aUseCount !== undefined && bUseCount !== undefined) {
         if (aUseCount !== bUseCount) {
           return bUseCount - aUseCount; // 降序：使用次数多的在前
@@ -2368,7 +2550,7 @@ export function LauncherWindow() {
     currentLoadResultsRef.current = allResults;
 
     // Split results into horizontal and vertical
-    const { horizontal, vertical } = splitResults(allResults, openHistory);
+    const { horizontal, vertical } = splitResults(allResults, openHistory, query);
 
     const INITIAL_COUNT = 100; // 初始显示100条
     const INCREMENT = 50; // 每次增加50条
@@ -2403,7 +2585,7 @@ export function LauncherWindow() {
     // 只有在结果数量 > INITIAL_COUNT 时才需要增量加载
     if (allResults.length > 0) {
       const initialResults = allResults.slice(0, INITIAL_COUNT);
-      const { horizontal: initialHorizontal, vertical: initialVertical } = splitResults(initialResults, openHistory);
+      const { horizontal: initialHorizontal, vertical: initialVertical } = splitResults(initialResults, openHistory, query);
       // 如果初始结果中没有横向结果，但全部结果中有横向结果，使用全部结果中的横向结果
       // 这样可以确保应用结果（通常是横向结果）不会被Everything结果覆盖
       // 同时，如果当前已经有横向结果，且新的初始结果中没有横向结果，保留当前的横向结果
@@ -2459,7 +2641,7 @@ export function LauncherWindow() {
         if (queryRef.current.trim() !== "" && 
             currentLoadResultsRef.current === allResults) {
           const currentResults = allResults.slice(0, currentCount);
-          const { horizontal: currentHorizontal, vertical: currentVertical } = splitResults(currentResults, openHistory);
+          const { horizontal: currentHorizontal, vertical: currentVertical } = splitResults(currentResults, openHistory, query);
           setResults(currentResults);
           // 同步更新横向和纵向结果
           setHorizontalResults(currentHorizontal);
@@ -4345,6 +4527,33 @@ export function LauncherWindow() {
       } catch (error) {
         console.error("Failed to record open history:", error);
       }
+      
+      // 对于应用类型，同时更新 file_history 表（用于使用频率统计）
+      // 注意：只对实际文件路径（.exe, .lnk）更新，UWP 应用路径（shell:AppsFolder, ms-settings:）跳过
+      if (result.type === "app" && result.path) {
+        const pathLower = result.path.toLowerCase();
+        const isRealFilePath = pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
+        if (isRealFilePath) {
+          try {
+            // 异步更新，不阻塞应用启动
+            console.log(`[应用打开] 准备更新 file_history: ${result.path}`);
+            void tauriApi.addFileToHistory(result.path)
+              .then(() => {
+                console.log(`[应用打开] ✓ 成功更新 file_history: ${result.path}`);
+                // 刷新文件历史缓存，确保下次搜索时能获取到最新的使用频率数据
+                void refreshFileHistoryCache();
+              })
+              .catch((error) => {
+                // 如果路径不存在或其他错误，记录警告（不影响应用启动）
+                console.warn(`[应用打开] ✗ 更新 file_history 失败: ${result.path}`, error);
+              });
+          } catch (error) {
+            console.warn(`[应用打开] ✗ 更新 file_history 异常: ${result.path}`, error);
+          }
+        } else {
+          console.log(`[应用打开] 跳过 file_history 更新（UWP 应用路径）: ${result.path}`);
+        }
+      }
 
       // Store the path and timestamp for later state update (after animation)
       const pathToUpdate = result.path;
@@ -4428,6 +4637,8 @@ export function LauncherWindow() {
           await tauriApi.launchApplication(result.app);
           trackEvent("app_launched", { name: result.app.name });
           
+          // 注意：file_history 的更新已经在 handleLaunch 开头处理了，这里不需要重复刷新
+          
           // 动画完成后，更新本地历史状态（此时启动器即将关闭，不会影响列表顺序）
           if (pathToUpdate) {
             setOpenHistory(prev => ({
@@ -4442,6 +4653,9 @@ export function LauncherWindow() {
           // 如果启动失败，清除启动状态
           setLaunchingAppPath(null);
           // 即使启动失败，也更新历史记录（因为用户确实尝试打开了）
+          // 刷新文件历史缓存，确保下次搜索时能获取到最新的使用频率数据
+          void refreshFileHistoryCache();
+          
           if (pathToUpdate) {
             setOpenHistory(prev => ({
               ...prev,
