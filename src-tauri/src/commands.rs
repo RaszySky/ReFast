@@ -3402,33 +3402,36 @@ pub fn reveal_in_folder(path: String) -> Result<(), String> {
             parent_str = parent_str[4..].to_string();
         }
         parent_str = parent_str.replace("/", "\\");
+        // Remove trailing backslash if present (explorer doesn't need it)
+        parent_str = parent_str.trim_end_matches('\\').to_string();
 
-        // If file exists and is a file, use explorer /select to open folder and select file
-        // Otherwise, just open the parent folder
-        if absolute_path.exists() && absolute_path.is_file() {
-            let mut file_path = if let Ok(canonical) = absolute_path.canonicalize() {
-                canonical
-            } else {
-                absolute_path
-            };
+        // Normalize the original file path for use with /select
+        let mut file_path_str = trimmed.to_string();
+        file_path_str = file_path_str.replace("/", "\\");
+        
+        // Check if the path looks like a file (has an extension or is not a directory)
+        let is_likely_file = absolute_path.extension().is_some() 
+            || (!absolute_path.exists() && !trimmed.ends_with("\\") && !trimmed.ends_with("/"));
+
+        // If it's a file (exists and is file) or looks like a file path, use /select
+        // This ensures we open the correct folder even if the file doesn't exist
+        if (absolute_path.exists() && absolute_path.is_file()) || is_likely_file {
+            // Use the original trimmed path, normalized
+            let mut path_str = file_path_str.clone();
             
-            let mut path_str = file_path.to_string_lossy().to_string();
-            if path_str.starts_with("\\\\?\\") {
-                path_str = path_str[4..].to_string();
-            }
-            path_str = path_str.replace("/", "\\");
-            
-            // Escape quotes in path
-            let escaped_path = path_str.replace("\"", "\"\"");
-            let explorer_arg = format!("/select,\"{}\"", escaped_path);
+            // Remove leading/trailing whitespace and normalize
+            path_str = path_str.trim().to_string();
             
             // Use explorer /select to open folder and select file
+            // Windows explorer requires /select,<path> format (no space after comma)
+            // We combine them into one argument, and Rust's Command will handle path quoting automatically
+            let explorer_arg = format!("/select,{}", path_str);
             Command::new("explorer")
                 .arg(&explorer_arg)
                 .spawn()
                 .map_err(|e| format!("Failed to execute explorer command: {}", e))?;
         } else {
-            // File doesn't exist or is a directory, just open the parent folder
+            // It's a directory or we can't determine, just open the parent folder
             Command::new("explorer")
                 .arg(&parent_str)
                 .spawn()
