@@ -64,6 +64,7 @@ export function LauncherWindow() {
   const [isSearchingEverything, setIsSearchingEverything] = useState(false);
   const [isDownloadingEverything, setIsDownloadingEverything] = useState(false);
   const [everythingDownloadProgress, setEverythingDownloadProgress] = useState(0);
+  const downloadButtonRef = useRef<HTMLButtonElement | null>(null);
   const [results, setResults] = useState<SearchResult[]>([]); // Keep for backward compatibility, will be removed later
   const [horizontalResults, setHorizontalResults] = useState<SearchResult[]>([]);
   const [verticalResults, setVerticalResults] = useState<SearchResult[]>([]);
@@ -487,8 +488,10 @@ export function LauncherWindow() {
     };
   }, []);
 
-  // Check if Everything is available on mount
+  // Check if Everything is available on mount and periodically if not available
   useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    
     const checkEverything = async () => {
       try {
         const status = await tauriApi.getEverythingStatus();
@@ -517,10 +520,20 @@ export function LauncherWindow() {
           } catch (error) {
             console.error("Failed to get Everything path:", error);
           }
+          
+          // 如果检测到已安装，清除定时器
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+            console.log("[Everything检测] 检测到 Everything 已安装，停止定时检测");
+          }
+          
+          return true;
         } else {
           console.warn("Everything is not available:", status.error);
           setEverythingPath(null);
           setEverythingVersion(null);
+          return false;
         }
       } catch (error) {
         console.error("Failed to check Everything availability:", error);
@@ -528,9 +541,28 @@ export function LauncherWindow() {
         setEverythingPath(null);
         setEverythingVersion(null);
         setEverythingError("检查失败");
+        return false;
       }
     };
-    checkEverything();
+    
+    // 立即检查一次
+    checkEverything().then((isAvailable) => {
+      // 如果 Everything 不可用，设置定时检测（每 5 秒检查一次）
+      if (!isAvailable) {
+        console.log("[Everything检测] Everything 未安装，开始定时检测（每 5 秒）");
+        intervalId = setInterval(async () => {
+          await checkEverything();
+        }, 5000); // 每 5 秒检查一次
+      }
+    });
+    
+    // 组件卸载时清除定时器
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        console.log("[Everything检测] 组件卸载，清除定时检测");
+      }
+    };
   }, []);
 
   // Load all memos on mount (for quick search)
@@ -1935,31 +1967,6 @@ export function LauncherWindow() {
       const toSort = regularResults.slice(0, MAX_SORT_COUNT);
       const rest = regularResults.slice(MAX_SORT_COUNT);
       
-      // 调试：输出排序前的应用列表
-      if (query.trim()) {
-        const appResultsBeforeSort = toSort.filter(r => r.type === "app");
-        if (appResultsBeforeSort.length > 0) {
-          console.log(`\n[排序调试-排序前] 查询: "${query}", 应用数量: ${appResultsBeforeSort.length}`);
-          appResultsBeforeSort.forEach((result, index) => {
-            const useCount = result.file?.use_count ?? 0;
-            const lastUsed = result.file?.last_used || openHistory[result.path] || 0;
-            const score = calculateRelevanceScore(
-              result.displayName,
-              result.path,
-              query,
-              useCount,
-              lastUsed,
-              result.type === "everything",
-              result.type === "app",
-              result.app?.name_pinyin,
-              result.app?.name_pinyin_initials,
-              result.type === "file"
-            );
-            console.log(`  [${index + 1}] ${result.displayName} - 评分: ${score}`);
-          });
-        }
-      }
-      
       toSort.sort((a, b) => {
         // 获取使用频率和最近使用时间
         const aUseCount = a.file?.use_count;
@@ -2030,54 +2037,7 @@ export function LauncherWindow() {
       
       // 重新组合：特殊类型 + 所有插件 + 排序后的前部分 + 未排序的后部分
       otherResults = [...specialResults, ...pluginResults, ...toSort, ...rest];
-      
-      // 调试：输出应用列表中每个item的使用频率
-      if (query.trim()) {
-        const appResults = otherResults.filter(r => r.type === "app");
-        if (appResults.length > 0) {
-          console.log(`[应用搜索调试] 查询: "${query}", 找到 ${appResults.length} 个应用:`);
-          appResults.forEach((result, index) => {
-            const useCount = result.file?.use_count ?? 0;
-            const lastUsed = result.file?.last_used ?? openHistory[result.path] ?? 0;
-            const lastUsedDate = lastUsed ? new Date(lastUsed * 1000).toLocaleString() : "从未使用";
-            const normalizedPath = result.path.toLowerCase().replace(/\\/g, "/");
-            const hasFileHistory = result.file !== undefined;
-            console.log(`  [${index + 1}] ${result.displayName}`);
-            console.log(`      路径: ${result.path}`);
-            console.log(`      标准化路径: ${normalizedPath}`);
-            console.log(`      使用次数: ${useCount}`);
-            console.log(`      最近使用: ${lastUsedDate} (${lastUsed})`);
-            console.log(`      是否有关联的文件历史: ${hasFileHistory}`);
-            console.log(`      文件历史数据:`, result.file);
-          });
-        }
-      }
     } else {
-      // 调试：输出排序前的应用列表
-      if (query.trim()) {
-        const appResultsBeforeSort = otherResults.filter(r => r.type === "app");
-        if (appResultsBeforeSort.length > 0) {
-          console.log(`\n[排序调试-排序前(else分支)] 查询: "${query}", 应用数量: ${appResultsBeforeSort.length}`);
-          appResultsBeforeSort.forEach((result, index) => {
-            const useCount = result.file?.use_count ?? 0;
-            const lastUsed = result.file?.last_used || openHistory[result.path] || 0;
-            const score = calculateRelevanceScore(
-              result.displayName,
-              result.path,
-              query,
-              useCount,
-              lastUsed,
-              result.type === "everything",
-              result.type === "app",
-              result.app?.name_pinyin,
-              result.app?.name_pinyin_initials,
-              result.type === "file"
-            );
-            console.log(`  [${index + 1}] ${result.displayName} - 评分: ${score}`);
-          });
-        }
-      }
-      
       // 结果数量较少时，直接排序所有结果
       otherResults.sort((a, b) => {
         // 特殊类型的结果保持最高优先级（AI、历史、设置等）
@@ -2191,31 +2151,6 @@ export function LauncherWindow() {
         if (a.type === "everything" && b.type === "file") return 1; // 历史文件优先于 Everything
         return bLastUsed - aLastUsed;
       });
-      
-      // 调试：输出排序后的应用列表
-      if (query.trim()) {
-        const appResultsAfterSort = otherResults.filter(r => r.type === "app");
-        if (appResultsAfterSort.length > 0) {
-          console.log(`\n[排序调试-排序后(else分支)] 查询: "${query}", 应用数量: ${appResultsAfterSort.length}`);
-          appResultsAfterSort.forEach((result, index) => {
-            const useCount = result.file?.use_count ?? 0;
-            const lastUsed = result.file?.last_used || openHistory[result.path] || 0;
-            const score = calculateRelevanceScore(
-              result.displayName,
-              result.path,
-              query,
-              useCount,
-              lastUsed,
-              result.type === "everything",
-              result.type === "app",
-              result.app?.name_pinyin,
-              result.app?.name_pinyin_initials,
-              result.type === "file"
-            );
-            console.log(`  [${index + 1}] ${result.displayName} - 评分: ${score}`);
-          });
-        }
-      }
     }
     
     // 提取所有插件，放在最前面
@@ -2231,53 +2166,6 @@ export function LauncherWindow() {
     const finalResults = jsonContainsLinks && jsonFormatterResult.length > 0
       ? [...pluginResults, ...jsonFormatterResult, ...urlResults, ...emailResults, ...otherResultsWithoutPlugins]
       : [...pluginResults, ...urlResults, ...emailResults, ...jsonFormatterResult, ...otherResultsWithoutPlugins];
-    
-    // 调试：输出应用列表中每个item的使用频率
-    if (query.trim()) {
-      const appResults = finalResults.filter(r => r.type === "app");
-      if (appResults.length > 0) {
-        console.log(`\n[应用搜索调试] ========== 查询: "${query}" ==========`);
-        console.log(`找到 ${appResults.length} 个应用:`);
-        appResults.forEach((result, index) => {
-          const useCount = result.file?.use_count ?? 0;
-          const lastUsed = result.file?.last_used ?? openHistory[result.path] ?? 0;
-          const lastUsedDate = lastUsed ? new Date(lastUsed * 1000).toLocaleString('zh-CN') : "从未使用";
-          const normalizedPath = result.path.toLowerCase().replace(/\\/g, "/");
-          const hasFileHistory = result.file !== undefined;
-          const score = calculateRelevanceScore(
-            result.displayName,
-            result.path,
-            query,
-            useCount,
-            lastUsed,
-            result.type === "everything",
-            result.type === "app",
-            result.app?.name_pinyin,
-            result.app?.name_pinyin_initials,
-            result.type === "file"
-          );
-          console.log(`  [${index + 1}] ${result.displayName}`);
-          console.log(`      路径: ${result.path}`);
-          console.log(`      标准化路径: ${normalizedPath}`);
-          console.log(`      使用次数: ${useCount}`);
-          console.log(`      最近使用: ${lastUsedDate} (时间戳: ${lastUsed})`);
-          console.log(`      是否有关联的文件历史: ${hasFileHistory}`);
-          console.log(`      相关性评分: ${score}`);
-          if (result.file) {
-            console.log(`      文件历史数据:`, {
-              path: result.file.path,
-              name: result.file.name,
-              use_count: result.file.use_count,
-              last_used: result.file.last_used,
-              is_folder: result.file.is_folder
-            });
-          } else {
-            console.log(`      文件历史数据: null (未找到)`);
-          }
-        });
-        console.log(`[应用搜索调试] ==========================================\n`);
-      }
-    }
     
     return finalResults;
   }, [filteredApps, filteredFiles, filteredMemos, filteredPlugins, everythingResults, detectedUrls, detectedEmails, detectedJson, openHistory, query, aiAnswer]);
@@ -4494,10 +4382,13 @@ export function LauncherWindow() {
 
   const handleDownloadEverything = useCallback(async () => {
     try {
+      console.log("[Everything下载] 开始下载...");
       setIsDownloadingEverything(true);
       setEverythingDownloadProgress(0);
 
+      console.log("[Everything下载] 调用 tauriApi.downloadEverything()...");
       const installerPath = await tauriApi.downloadEverything();
+      console.log("[Everything下载] 下载完成，安装程序路径:", installerPath);
       setEverythingDownloadProgress(100);
 
       // 下载完成后，临时取消窗口置顶，确保安装程序显示在启动器之上
@@ -4505,16 +4396,19 @@ export function LauncherWindow() {
       await window.setAlwaysOnTop(false);
 
       // 自动打开安装程序
+      console.log("[Everything下载] 启动安装程序...");
       await tauriApi.launchFile(installerPath);
 
       // 下载逻辑结束，重置下载状态（不再弹出遮挡安装向导的提示框）
       setIsDownloadingEverything(false);
       setEverythingDownloadProgress(0);
+      console.log("[Everything下载] 完成");
     } catch (error) {
-      console.error("Failed to download Everything:", error);
+      console.error("[Everything下载] 下载失败:", error);
       setIsDownloadingEverything(false);
       setEverythingDownloadProgress(0);
-      alert(`下载失败: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`下载失败: ${errorMessage}`);
     }
   }, []);
 
@@ -5403,12 +5297,14 @@ export function LauncherWindow() {
             className={`${layout.header} select-none`}
             onMouseDown={async (e) => {
               // 手动触发拖拽，移除 data-tauri-drag-region 避免冲突
-              // 排除输入框和应用中心按钮
+              // 排除输入框、应用中心按钮和 footer 区域的按钮
               // 注意：wrapper 区域会 stopPropagation，所以这里主要处理 wrapper 上方的区域
               const target = e.target as HTMLElement;
               const isInput = target.tagName === 'INPUT' || target.closest('input');
               const isAppCenterButton = target.closest('[title="应用中心"]');
-              if (!isInput && !isAppCenterButton) {
+              const isFooterButton = target.closest('button') && target.closest('[class*="border-t"]');
+              const isButton = target.tagName === 'BUTTON' || target.closest('button');
+              if (!isInput && !isAppCenterButton && !isFooterButton && !isButton) {
                 // 使用和 wrapper 相同的可靠逻辑：先阻止默认行为和冒泡，再调用拖拽
                 e.preventDefault();
                 e.stopPropagation();
@@ -6141,7 +6037,18 @@ export function LauncherWindow() {
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-2 border-t border-gray-100 text-xs text-gray-400 flex justify-between items-center bg-gray-50/50 flex-shrink-0 gap-2 min-w-0">
+          <div 
+            className="px-6 py-2 border-t border-gray-100 text-xs text-gray-400 flex justify-between items-center bg-gray-50/50 flex-shrink-0 gap-2 min-w-0"
+            onMouseDown={(e) => {
+              // 阻止 footer 区域的点击事件被 header 的拖动处理器捕获
+              const target = e.target as HTMLElement;
+              const isButton = target.tagName === 'BUTTON' || target.closest('button');
+              if (isButton) {
+                // 如果是按钮，阻止事件冒泡到 header，让按钮自己的 onClick 处理
+                e.stopPropagation();
+              }
+            }}
+          >
             <div className="flex items-center gap-3 min-w-0 flex-1">
               {!showAiAnswer && results.length > 0 && <span className="whitespace-nowrap">{results.length} 个结果</span>}
               {showAiAnswer && <span className="whitespace-nowrap">AI 回答模式</span>}
@@ -6168,6 +6075,15 @@ export function LauncherWindow() {
                 </div>
                 {!isEverythingAvailable && (
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {(() => {
+                      console.log("[Everything下载] 按钮渲染检查:", {
+                        isEverythingAvailable,
+                        everythingError,
+                        isDownloadingEverything,
+                        shouldShowDownload: !everythingError || !everythingError.startsWith("SERVICE_NOT_RUNNING"),
+                      });
+                      return null;
+                    })()}
                     {everythingError && everythingError.startsWith("SERVICE_NOT_RUNNING") && (
                       <button
                         onClick={handleStartEverything}
@@ -6179,20 +6095,59 @@ export function LauncherWindow() {
                     )}
                     {(!everythingError || !everythingError.startsWith("SERVICE_NOT_RUNNING")) && (
                       <button
-                        onClick={handleDownloadEverything}
+                        ref={downloadButtonRef}
+                        onPointerDown={(e) => {
+                          console.log("[Everything下载] onPointerDown 触发", {
+                            pointerType: e.pointerType,
+                            button: e.button,
+                            disabled: isDownloadingEverything,
+                          });
+                        }}
+                        onClick={(e) => {
+                          console.log("[Everything下载] onClick 触发", {
+                            disabled: isDownloadingEverything,
+                            target: e.target,
+                            currentTarget: e.currentTarget,
+                          });
+                          if (!isDownloadingEverything) {
+                            console.log("[Everything下载] 通过 onClick 触发下载");
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDownloadEverything().catch((error) => {
+                              console.error("[Everything下载] handleDownloadEverything 抛出错误:", error);
+                            });
+                          } else {
+                            console.log("[Everything下载] 按钮已禁用，忽略点击");
+                          }
+                        }}
                         disabled={isDownloadingEverything}
                         className={`px-2 py-1 text-xs rounded transition-colors whitespace-nowrap ${
                           isDownloadingEverything
                             ? 'bg-gray-400 text-white cursor-not-allowed'
                             : 'bg-blue-500 text-white hover:bg-blue-600'
                         }`}
+                        style={{ pointerEvents: 'auto', zIndex: 1000, position: 'relative' }}
                         title="下载并安装 Everything"
+                        data-testid="download-everything-button"
                       >
                         {isDownloadingEverything ? `下载中 ${everythingDownloadProgress}%` : '下载'}
                       </button>
                     )}
                     <button
-                      onClick={handleCheckAgain}
+                      onMouseDown={(e) => {
+                        console.log("[Everything刷新] onMouseDown 触发", {
+                          button: e.button,
+                        });
+                      }}
+                      onClick={(e) => {
+                        console.log("[Everything刷新] onClick 触发");
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log("[Everything刷新] 调用 handleCheckAgain");
+                        handleCheckAgain().catch((error) => {
+                          console.error("[Everything刷新] handleCheckAgain 抛出错误:", error);
+                        });
+                      }}
                       className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors whitespace-nowrap"
                       title="重新检测 Everything"
                     >
