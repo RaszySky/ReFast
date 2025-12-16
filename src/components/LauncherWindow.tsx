@@ -4524,13 +4524,54 @@ export function LauncherWindow() {
           return; // 不继续执行后续的 hideLauncherAndResetState
         }
       } else if (result.type === "file" && result.file) {
-        await tauriApi.launchFile(result.file.path);
+        try {
+          await tauriApi.launchFile(result.file.path);
+        } catch (fileError: any) {
+          const errorMsg = fileError?.message || fileError?.toString() || "";
+          // 检测是否是文件不存在的错误，自动删除历史记录
+          if (errorMsg.includes("Path not found") || errorMsg.includes("not found")) {
+            try {
+              // 自动删除无效的历史记录
+              await tauriApi.deleteFileHistory(result.file.path);
+              // 刷新文件历史缓存
+              await refreshFileHistoryCache();
+              // 重新搜索以更新结果列表
+              if (query.trim()) {
+                await searchFileHistory(query);
+              } else {
+                await searchFileHistory("");
+              }
+              // 显示提示信息
+              setErrorMessage(`文件不存在：${result.file.path}\n\n已自动从历史记录中删除该文件。`);
+            } catch (deleteError: any) {
+              console.error("Failed to delete file history:", deleteError);
+              // 如果删除失败，仍然显示原始错误
+              setErrorMessage(`文件不存在：${result.file.path}\n\n错误：${errorMsg}`);
+            }
+            return; // 不继续执行后续的 hideLauncherAndResetState
+          } else {
+            // 其他错误，正常显示
+            throw fileError;
+          }
+        }
       } else if (result.type === "everything" && result.everything) {
         // Launch Everything result and add to file history
-        await tauriApi.launchFile(result.everything.path);
-        await tauriApi.addFileToHistory(result.everything.path);
-        // 更新前端缓存
-        await refreshFileHistoryCache();
+        try {
+          await tauriApi.launchFile(result.everything.path);
+          await tauriApi.addFileToHistory(result.everything.path);
+          // 更新前端缓存
+          await refreshFileHistoryCache();
+        } catch (fileError: any) {
+          const errorMsg = fileError?.message || fileError?.toString() || "";
+          // 检测是否是文件不存在的错误
+          if (errorMsg.includes("Path not found") || errorMsg.includes("not found")) {
+            setErrorMessage(`文件不存在：${result.everything.path}`);
+            return; // 不继续执行后续的 hideLauncherAndResetState
+          } else {
+            // 其他错误，正常显示
+            throw fileError;
+          }
+        }
       } else if (result.type === "memo" && result.memo) {
         // 打开备忘录详情弹窗（单条模式）
         setIsMemoListMode(false);
@@ -4626,6 +4667,34 @@ export function LauncherWindow() {
         target.type === "everything" ||
         target.type === "app"
       ) {
+        // 对于文件类型，先检查文件是否存在
+        if (target.type === "file" || target.type === "everything") {
+          const pathItem = await tauriApi.checkPathExists(path);
+          if (!pathItem) {
+            // 文件不存在，自动删除历史记录
+            // 先关闭右键菜单
+            setContextMenu(null);
+            
+            try {
+              await tauriApi.deleteFileHistory(path);
+              // 刷新文件历史缓存
+              await refreshFileHistoryCache();
+              // 重新搜索以更新结果列表
+              if (query.trim()) {
+                await searchFileHistory(query);
+              } else {
+                await searchFileHistory("");
+              }
+              // 显示提示信息
+              setErrorMessage(`文件不存在，已自动从历史记录中删除该文件。`);
+            } catch (deleteError: any) {
+              console.error("Failed to delete file history:", deleteError);
+              setErrorMessage(`文件不存在，但删除历史记录失败：${deleteError}`);
+            }
+            return;
+          }
+        }
+        
         // Use custom reveal_in_folder command to handle shell: protocol paths
         await tauriApi.revealInFolder(path);
         console.log("Reveal in folder called successfully");
@@ -4633,10 +4702,16 @@ export function LauncherWindow() {
       setContextMenu(null);
     } catch (error) {
       console.error("Failed to reveal in folder:", error);
-      alert(`打开文件夹失败: ${error}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      // 检查是否是父目录不存在的错误
+      if (errorMsg.includes("Parent directory does not exist")) {
+        alert(`无法打开文件夹：父目录不存在\n\n${errorMsg}`);
+      } else {
+        alert(`打开文件夹失败: ${errorMsg}`);
+      }
       setContextMenu(null);
     }
-  }, [contextMenu]);
+  }, [contextMenu, query, refreshFileHistoryCache, setErrorMessage]);
 
   const processPastedPath = useCallback(async (trimmedPath: string) => {
     console.log("Processing path:", trimmedPath);
