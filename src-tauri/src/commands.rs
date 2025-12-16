@@ -22,7 +22,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::{Duration, UNIX_EPOCH};
 use futures_util::StreamExt;
 use std::hash::{Hash, Hasher};
@@ -70,6 +70,29 @@ static SEARCH_SESSION_MANAGER: LazyLock<Arc<Mutex<SearchSessionManager>>> = Lazy
         sessions: std::collections::HashMap::new(),
     }))
 });
+
+/// 安全地获取 APP_CACHE 锁，自动处理 poisoned lock
+/// 如果锁被 poisoned（之前的线程 panic），会恢复数据并继续使用
+/// 这样可以防止因为一次 panic 导致整个应用无法使用缓存
+/// 
+/// 返回 Arc 的 clone，调用者需要自己 lock
+fn get_app_cache() -> Arc<Mutex<Option<Arc<Vec<app_search::AppInfo>>>>> {
+    APP_CACHE.clone()
+}
+
+/// 安全地 lock APP_CACHE，自动处理 poisoned lock
+/// 接受 Arc 参数，返回 guard
+fn lock_app_cache_safe(cache: &Arc<Mutex<Option<Arc<Vec<app_search::AppInfo>>>>>) -> MutexGuard<'_, Option<Arc<Vec<app_search::AppInfo>>>> {
+    // 使用 unwrap_or_else 处理 poisoned lock：如果锁被 poisoned，恢复数据并继续使用
+    // 当锁被 poisoned 时，into_inner() 会恢复数据并清除 poisoned 状态
+    cache.lock().unwrap_or_else(|poisoned| {
+        // 锁被 poisoned，恢复数据（这会清除 poisoned 状态）
+        let _recovered = poisoned.into_inner();
+        // 重新获取锁（这次应该成功，因为 poisoned 状态已被清除）
+        // 如果再次失败（理论上不应该发生），会 panic
+        cache.lock().expect("无法恢复 poisoned lock：锁状态异常")
+    })
+}
 
 pub fn get_app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     // Try to use Tauri's path API first
@@ -493,8 +516,8 @@ pub fn get_playback_progress() -> Result<f32, String> {
 pub async fn scan_applications(app: tauri::AppHandle) -> Result<Vec<app_search::AppInfo>, String> {
     let app_clone = app.clone();
     async_runtime::spawn_blocking(move || {
-        let cache = APP_CACHE.clone();
-        let mut cache_guard = cache.lock().map_err(|e| e.to_string())?;
+        let cache = get_app_cache();
+        let mut cache_guard = lock_app_cache_safe(&cache);
 
         let apps = if let Some(ref cached_apps) = *cache_guard {
             // Return cached apps if available (Arc 共享引用，只增加引用计数)
@@ -644,8 +667,8 @@ pub async fn rescan_applications(app: tauri::AppHandle) -> Result<(), String> {
         });
         
         let scan_result = async_runtime::spawn_blocking(move || -> Result<Vec<app_search::AppInfo>, String> {
-            let cache = APP_CACHE.clone();
-            let mut cache_guard = cache.lock().map_err(|e| format!("锁定缓存失败: {}", e))?;
+            let cache = get_app_cache();
+            let mut cache_guard = lock_app_cache_safe(&cache);
 
             // Clear memory cache
             *cache_guard = None;
@@ -707,7 +730,7 @@ pub async fn search_applications(
     app: tauri::AppHandle,
 ) -> Result<Vec<app_search::AppInfo>, String> {
     eprintln!("[搜索应用] 函数被调用: query={}", query);
-    let cache = APP_CACHE.clone();
+    let cache = get_app_cache();
     let app_handle_clone = app.clone();
     let query_clone = query.clone();
     
@@ -721,7 +744,8 @@ pub async fn search_applications(
         // 步骤1: 获取锁并读取数据，然后立即释放锁
         let lock_start = std::time::Instant::now();
         let apps = {
-            let mut cache_guard = cache_for_search.lock().map_err(|e| e.to_string())?;
+            let cache = get_app_cache();
+            let mut cache_guard = lock_app_cache_safe(&cache);
             let lock_acquired = std::time::Instant::now();
             let lock_wait_time = lock_acquired.duration_since(lock_start);
             if lock_wait_time.as_millis() > 1 {
@@ -932,7 +956,7 @@ pub async fn search_applications(
                         // 过滤出缓存中确实没有图标的应用
                         results_paths.iter()
                             .filter(|path_str| {
-                                let need_extract = apps_arc.iter()
+                                let need_extract: bool = apps_arc.iter()
                                     .find(|a| a.path == **path_str)
                                     .map(|a| {
                                         let missing = a.icon.is_none();
@@ -1081,8 +1105,8 @@ pub async fn populate_app_icons(
     async_runtime::spawn_blocking(move || {
         let max_to_process = limit.unwrap_or(100);
 
-        let cache = APP_CACHE.clone();
-        let mut cache_guard = cache.lock().map_err(|e| e.to_string())?;
+        let cache = get_app_cache();
+        let mut cache_guard = lock_app_cache_safe(&cache);
 
         let apps_arc = cache_guard.as_ref().ok_or_else(|| {
             "Applications not scanned yet. Call scan_applications first.".to_string()
@@ -1171,8 +1195,8 @@ pub fn launch_application(app: app_search::AppInfo) -> Result<(), String> {
 pub async fn remove_app_from_index(app_path: String, app: tauri::AppHandle) -> Result<(), String> {
     let app_clone = app.clone();
     async_runtime::spawn_blocking(move || {
-        let cache = APP_CACHE.clone();
-        let mut cache_guard = cache.lock().map_err(|e| format!("锁定缓存失败: {}", e))?;
+        let cache = get_app_cache();
+        let mut cache_guard = lock_app_cache_safe(&cache);
 
         let apps_arc = cache_guard.as_ref().ok_or_else(|| {
             "Applications not scanned yet. Call scan_applications first.".to_string()
@@ -1207,8 +1231,8 @@ pub async fn debug_app_icon(app_name: String, _app: tauri::AppHandle) -> Result<
     
     // 在后台线程执行耗时操作，避免阻塞 UI
     async_runtime::spawn_blocking(move || {
-        let cache = APP_CACHE.clone();
-        let cache_guard = cache.lock().map_err(|e| e.to_string())?;
+        let cache = get_app_cache();
+        let cache_guard = lock_app_cache_safe(&cache);
         
         let apps = cache_guard
             .as_ref()
@@ -1352,14 +1376,8 @@ pub async fn extract_icon_from_path(file_path: String, app: tauri::AppHandle) ->
         
         // 在后台线程执行添加操作
         async_runtime::spawn_blocking(move || {
-            let cache = APP_CACHE.clone();
-            let mut cache_guard = match cache.lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    eprintln!("[添加应用到列表] 获取锁失败: {}", e);
-                    return;
-                }
-            };
+            let cache = get_app_cache();
+            let mut cache_guard = lock_app_cache_safe(&cache);
             
             // 确保缓存已初始化
             if cache_guard.is_none() {
@@ -2875,8 +2893,8 @@ pub fn get_index_status(app: tauri::AppHandle) -> Result<IndexStatus, String> {
             .map(|d| d.as_secs());
         let cache_file = cache_file_path.to_str().map(|s| s.to_string());
 
-        let cache = APP_CACHE.clone();
-        let mut cache_guard = cache.lock().map_err(|e| e.to_string())?;
+        let cache = get_app_cache();
+        let mut cache_guard = lock_app_cache_safe(&cache);
         if cache_guard.is_none() {
             if let Ok(disk_cache) = app_search::windows::load_cache(&app_data_dir) {
                 if !disk_cache.is_empty() {

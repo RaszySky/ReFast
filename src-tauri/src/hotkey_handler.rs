@@ -572,35 +572,33 @@ pub mod windows {
                     log_hotkey!("[Hotkey] Initial setup: Double modifier hotkey detected (modifiers={:x}, vk={:x}), using keyboard hook", mods, vk_code);
                     
                     // 安装键盘钩子
-                    unsafe {
-                        use windows_sys::Win32::Foundation::HINSTANCE;
-                        let hook = SetWindowsHookExW(
-                            WH_KEYBOARD_LL,
-                            keyboard_hook_proc,
-                            HINSTANCE::default(), // hMod 为 NULL 表示当前进程
-                            0, // dwThreadId 为 0 表示全局钩子
-                        );
-                        
-                        use windows_sys::Win32::UI::WindowsAndMessaging::HHOOK;
-                        if hook == HHOOK::default() {
-                            log_hotkey!("[Hotkey] Error: Failed to install keyboard hook during initialization");
-                            // Free the sender pointer before cleanup
-                            let sender_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
-                                hwnd,
-                                windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
-                            ) as *mut mpsc::Sender<()>;
-                            if !sender_ptr.is_null() {
-                                let _ = Box::from_raw(sender_ptr);
-                            }
-                            let _ = UnregisterClassW(class_name.as_ptr(), 0);
-                            return;
+                    use windows_sys::Win32::Foundation::HINSTANCE;
+                    let hook = SetWindowsHookExW(
+                        WH_KEYBOARD_LL,
+                        keyboard_hook_proc,
+                        HINSTANCE::default(), // hMod 为 NULL 表示当前进程
+                        0, // dwThreadId 为 0 表示全局钩子
+                    );
+                    
+                    use windows_sys::Win32::UI::WindowsAndMessaging::HHOOK;
+                    if hook == HHOOK::default() {
+                        log_hotkey!("[Hotkey] Error: Failed to install keyboard hook during initialization");
+                        // Free the sender pointer before cleanup
+                        let sender_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
+                            hwnd,
+                            windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
+                        ) as *mut mpsc::Sender<()>;
+                        if !sender_ptr.is_null() {
+                            let _ = Box::from_raw(sender_ptr);
                         }
-                        
-                        // 保存钩子句柄
-                        let mut state_guard = state.lock().unwrap();
-                        state_guard.hook = Some(hook);
-                        log_hotkey!("[Hotkey] Initial setup: Keyboard hook installed successfully, hook={:?}, hwnd={:?}", hook, hwnd);
+                        let _ = UnregisterClassW(class_name.as_ptr(), 0);
+                        return;
                     }
+                    
+                    // 保存钩子句柄
+                    let mut state_guard = state.lock().unwrap();
+                    state_guard.hook = Some(hook);
+                    log_hotkey!("[Hotkey] Initial setup: Keyboard hook installed successfully, hook={:?}, hwnd={:?}", hook, hwnd);
                 } else {
                     // 对于非重复修饰键，使用 RegisterHotKey
                     let result = RegisterHotKey(hwnd, HOTKEY_ID, mods, vk_code);
@@ -831,30 +829,28 @@ pub mod windows {
                     }
                     
                     // 安装新的键盘钩子
-                    unsafe {
-                        use windows_sys::Win32::Foundation::HINSTANCE;
-                        let hook = SetWindowsHookExW(
-                            WH_KEYBOARD_LL,
-                            keyboard_hook_proc,
-                            HINSTANCE::default(), // hMod 为 NULL 表示当前进程
-                            0, // dwThreadId 为 0 表示全局钩子
-                        );
-                        
-                        use windows_sys::Win32::UI::WindowsAndMessaging::HHOOK;
-                        if hook == HHOOK::default() {
-                            log_hotkey!("[Hotkey] Error: Failed to install keyboard hook");
-                            return 0;
-                        }
-                        
-                        // 保存钩子句柄和窗口句柄
-                        let global_state = HOTKEY_STATE.lock().unwrap();
-                        if let Some(state) = global_state.as_ref() {
-                            let mut state_guard = state.lock().unwrap();
-                            state_guard.hook = Some(hook);
-                            state_guard.hwnd = Some(hwnd); // 确保 hwnd 已设置
-                            log_hotkey!("[Hotkey] Window thread: Keyboard hook installed successfully, hook={:?}, hwnd={:?}, modifiers={:x}, vk={:x}, is_double_modifier={}", 
-                                      hook, hwnd, state_guard.modifiers, state_guard.vk, state_guard.is_double_modifier);
-                        }
+                    use windows_sys::Win32::Foundation::HINSTANCE;
+                    let hook = SetWindowsHookExW(
+                        WH_KEYBOARD_LL,
+                        keyboard_hook_proc,
+                        HINSTANCE::default(), // hMod 为 NULL 表示当前进程
+                        0, // dwThreadId 为 0 表示全局钩子
+                    );
+                    
+                    use windows_sys::Win32::UI::WindowsAndMessaging::HHOOK;
+                    if hook == HHOOK::default() {
+                        log_hotkey!("[Hotkey] Error: Failed to install keyboard hook");
+                        return 0;
+                    }
+                    
+                    // 保存钩子句柄和窗口句柄
+                    let global_state = HOTKEY_STATE.lock().unwrap();
+                    if let Some(state) = global_state.as_ref() {
+                        let mut state_guard = state.lock().unwrap();
+                        state_guard.hook = Some(hook);
+                        state_guard.hwnd = Some(hwnd); // 确保 hwnd 已设置
+                        log_hotkey!("[Hotkey] Window thread: Keyboard hook installed successfully, hook={:?}, hwnd={:?}, modifiers={:x}, vk={:x}, is_double_modifier={}", 
+                                  hook, hwnd, state_guard.modifiers, state_guard.vk, state_guard.is_double_modifier);
                     }
                     
                     return 0;
