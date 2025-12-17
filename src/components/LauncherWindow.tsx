@@ -1,5 +1,39 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { flushSync } from "react-dom";
+
+// 格式化最近使用时间的相对时间显示
+function formatLastUsedTime(timestamp: number): string {
+  // 判断时间戳是秒级还是毫秒级（毫秒级时间戳 > 1e12）
+  const ts = timestamp > 1e12 ? timestamp : timestamp * 1000;
+  const now = Date.now();
+  const diff = now - ts;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (seconds < 60) {
+    return "刚刚";
+  } else if (minutes < 60) {
+    return `${minutes}分钟前`;
+  } else if (hours < 24) {
+    return `${hours}小时前`;
+  } else if (days === 1) {
+    return "昨天";
+  } else if (days < 7) {
+    return `${days}天前`;
+  } else {
+    // 超过7天显示具体日期
+    const date = new Date(ts);
+    const today = new Date();
+    const isThisYear = date.getFullYear() === today.getFullYear();
+    if (isThisYear) {
+      return `${date.getMonth() + 1}月${date.getDate()}日`;
+    } else {
+      return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    }
+  }
+}
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { tauriApi } from "../api/tauri";
@@ -2069,23 +2103,38 @@ export function LauncherWindow() {
         if (a.type === "file" && b.type === "everything") return -1;
         if (a.type === "everything" && b.type === "file") return 1;
 
-        // 按评分降序排序（分数高的在前）
-        if (bScore !== aScore) {
-          // 如果评分差距在200分以内，且一个是历史文件，另一个是 Everything 结果，优先历史文件
-          const scoreDiff = Math.abs(bScore - aScore);
-          if (scoreDiff <= 200) {
-            if (a.type === "file" && b.type === "everything") return -1; // 历史文件优先
-            if (a.type === "everything" && b.type === "file") return 1; // 历史文件优先
+        // 第一优先级：最近使用时间（最近打开的始终排在前面）
+        if (aLastUsed !== undefined && aLastUsed > 0 && bLastUsed !== undefined && bLastUsed > 0) {
+          // 两个都有使用时间，按时间降序排序（最近的在前面）
+          if (aLastUsed !== bLastUsed) {
+            return bLastUsed - aLastUsed;
           }
+        } else if (aLastUsed !== undefined && aLastUsed > 0) {
+          // 只有 a 有使用时间，a 排在前面
+          return -1;
+        } else if (bLastUsed !== undefined && bLastUsed > 0) {
+          // 只有 b 有使用时间，b 排在前面
+          return 1;
+        }
+
+        // 第二优先级：按评分降序排序（分数高的在前）
+        if (bScore !== aScore) {
           return bScore - aScore;
         }
 
-        // 如果评分相同，优先顺序：应用 > 历史文件 > Everything > 其他，然后按最近使用时间排序
+        // 第三优先级：类型优先级（应用 > 历史文件 > Everything > 其他）
         if (a.type === "app" && b.type !== "app") return -1;
         if (a.type !== "app" && b.type === "app") return 1;
         if (a.type === "file" && b.type === "everything") return -1; // 历史文件优先于 Everything
         if (a.type === "everything" && b.type === "file") return 1; // 历史文件优先于 Everything
-        return bLastUsed - aLastUsed;
+        
+        // 第四优先级：使用频率（使用次数多的在前）
+        if (aUseCount !== undefined && bUseCount !== undefined && aUseCount !== bUseCount) {
+          return bUseCount - aUseCount;
+        }
+        
+        // 最后：按名称排序（保持稳定排序）
+        return a.displayName.localeCompare(b.displayName);
       });
       
       // 重新组合：特殊类型 + 所有插件 + 排序后的前部分 + 未排序的后部分
@@ -2174,7 +2223,21 @@ export function LauncherWindow() {
         if (a.type === "file" && b.type === "everything") return -1;
         if (a.type === "everything" && b.type === "file") return 1;
 
-        // 按评分降序排序（分数高的在前）
+        // 第一优先级：最近使用时间（最近打开的始终排在前面）
+        if (aLastUsed !== undefined && aLastUsed > 0 && bLastUsed !== undefined && bLastUsed > 0) {
+          // 两个都有使用时间，按时间降序排序（最近的在前面）
+          if (aLastUsed !== bLastUsed) {
+            return bLastUsed - aLastUsed;
+          }
+        } else if (aLastUsed !== undefined && aLastUsed > 0) {
+          // 只有 a 有使用时间，a 排在前面
+          return -1;
+        } else if (bLastUsed !== undefined && bLastUsed > 0) {
+          // 只有 b 有使用时间，b 排在前面
+          return 1;
+        }
+
+        // 第二优先级：按评分降序排序（分数高的在前）
         if (bScore !== aScore) {
           // 如果查询匹配设置关键词，Windows 设置应用优先（即使分数稍低）
           if (shouldShowSettings) {
@@ -2184,16 +2247,10 @@ export function LauncherWindow() {
               if (!aIsSettingsApp && bIsSettingsApp && !aIsSpecial && !aIsPlugin) return 1;
             }
           }
-          // 如果评分差距在200分以内，且一个是历史文件，另一个是 Everything 结果，优先历史文件
-          const scoreDiff = Math.abs(bScore - aScore);
-          if (scoreDiff <= 200) {
-            if (a.type === "file" && b.type === "everything") return -1; // 历史文件优先
-            if (a.type === "everything" && b.type === "file") return 1; // 历史文件优先
-          }
           return bScore - aScore;
         }
 
-        // 如果评分相同，优先顺序：Windows 设置应用 > 应用 > 历史文件 > Everything > 其他，然后按最近使用时间排序
+        // 第三优先级：类型优先级（Windows 设置应用 > 应用 > 历史文件 > Everything > 其他）
         if (shouldShowSettings) {
           if (aIsSettingsApp && !bIsSettingsApp && !bIsSpecial && !bIsPlugin) return -1;
           if (!aIsSettingsApp && bIsSettingsApp && !aIsSpecial && !aIsPlugin) return 1;
@@ -2202,7 +2259,14 @@ export function LauncherWindow() {
         if (a.type !== "app" && b.type === "app") return 1;
         if (a.type === "file" && b.type === "everything") return -1; // 历史文件优先于 Everything
         if (a.type === "everything" && b.type === "file") return 1; // 历史文件优先于 Everything
-        return bLastUsed - aLastUsed;
+        
+        // 第四优先级：使用频率（使用次数多的在前）
+        if (aUseCount !== undefined && bUseCount !== undefined && aUseCount !== bUseCount) {
+          return bUseCount - aUseCount;
+        }
+        
+        // 最后：按名称排序（保持稳定排序）
+        return a.displayName.localeCompare(b.displayName);
       });
     }
     
@@ -2385,21 +2449,39 @@ export function LauncherWindow() {
           b.type === "file"
         );
         
-        // 如果评分不同，按评分降序排序
+        // 第一优先级：最近使用时间（最近打开的始终排在前面）
+        if (aLastUsed !== undefined && aLastUsed > 0 && bLastUsed !== undefined && bLastUsed > 0) {
+          // 两个都有使用时间，按时间降序排序（最近的在前面）
+          if (aLastUsed !== bLastUsed) {
+            return bLastUsed - aLastUsed;
+          }
+        } else if (aLastUsed !== undefined && aLastUsed > 0) {
+          // 只有 a 有使用时间，a 排在前面
+          return -1;
+        } else if (bLastUsed !== undefined && bLastUsed > 0) {
+          // 只有 b 有使用时间，b 排在前面
+          return 1;
+        }
+        
+        // 第二优先级：按评分降序排序（分数高的在前）
         if (bScore !== aScore) {
           return bScore - aScore;
         }
-      }
-      
-      // 其次按最近使用时间排序（最近使用的在前）
-      if (aLastUsed && bLastUsed) {
-        if (aLastUsed !== bLastUsed) {
-          return bLastUsed - aLastUsed; // 降序：最近使用的在前
+      } else {
+        // 没有查询时，直接按最近使用时间排序
+        // 第一优先级：最近使用时间（最近打开的始终排在前面）
+        if (aLastUsed !== undefined && aLastUsed > 0 && bLastUsed !== undefined && bLastUsed > 0) {
+          // 两个都有使用时间，按时间降序排序（最近的在前面）
+          if (aLastUsed !== bLastUsed) {
+            return bLastUsed - aLastUsed;
+          }
+        } else if (aLastUsed !== undefined && aLastUsed > 0) {
+          // 只有 a 有使用时间，a 排在前面
+          return -1;
+        } else if (bLastUsed !== undefined && bLastUsed > 0) {
+          // 只有 b 有使用时间，b 排在前面
+          return 1;
         }
-      } else if (aLastUsed && !bLastUsed) {
-        return -1; // a 有使用记录，b 没有，a 在前
-      } else if (!aLastUsed && bLastUsed) {
-        return 1; // b 有使用记录，a 没有，b 在前
       }
       
       // 再次按使用频率排序（使用次数多的在前）
@@ -5847,6 +5929,13 @@ export function LauncherWindow() {
                           className={`text-xs mt-0.5 ${theme.usageText(isSelected)}`}
                         >
                           使用 {result.file.use_count} 次
+                          {(() => {
+                            // 获取最近使用时间（优先使用 file.last_used，否则使用 openHistory）
+                            const lastUsed = result.file?.last_used || openHistory[result.path] || 0;
+                            if (!lastUsed || lastUsed === 0) return null;
+                            
+                            return <span className="ml-2">· {formatLastUsedTime(lastUsed)}</span>;
+                          })()}
                         </div>
                       )}
                       {/* 粘贴图片的保存选项 */}

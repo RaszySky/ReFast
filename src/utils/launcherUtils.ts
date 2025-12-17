@@ -188,12 +188,35 @@ export function calculateRelevanceScore(
       }
     }
     if (lastUsed !== undefined) {
-      // 最近使用时间：距离现在越近分数越高
-      // 将时间戳转换为天数，然后计算分数（30天内使用过的有加分）
-      const daysSinceUse = (Date.now() - lastUsed) / (1000 * 60 * 60 * 24);
-      if (daysSinceUse <= 30) {
-        score += Math.max(0, 50 - daysSinceUse * 2); // 30天内：50分递减到0分
+      // 最近使用时间：距离现在越近分数越高（大幅提高权重）
+      const now = Date.now();
+      const hoursSinceUse = (now - lastUsed) / (1000 * 60 * 60);
+      const daysSinceUse = hoursSinceUse / 24;
+      
+      let timeScore = 0;
+      if (hoursSinceUse <= 1) {
+        // 最近1小时内：+500分
+        timeScore = 500;
+      } else if (hoursSinceUse <= 24) {
+        // 最近1天内：+300分
+        timeScore = 300;
+      } else if (daysSinceUse <= 7) {
+        // 最近7天内：+200分，线性递减
+        timeScore = 200 - (daysSinceUse - 1) * 20;
+      } else if (daysSinceUse <= 30) {
+        // 最近30天内：+100分，线性递减
+        timeScore = 100 - (daysSinceUse - 7) * (100 / 23);
+      } else if (daysSinceUse <= 90) {
+        // 最近90天内：+50分，线性递减
+        timeScore = 50 - (daysSinceUse - 30) * (50 / 60);
       }
+      
+      // 历史文件类型额外加权（×1.5），让历史文件更重视最近使用时间
+      if (isFileHistory && timeScore > 0) {
+        timeScore = Math.floor(timeScore * 1.5);
+      }
+      
+      score += Math.max(0, timeScore);
     }
     // 历史文件基础加分
     if (isFileHistory) {
@@ -312,12 +335,36 @@ export function calculateRelevanceScore(
     }
   }
 
-  // 最近使用时间加分
+  // 最近使用时间加分（大幅提高权重，让最近打开的文件排到前面）
   if (lastUsed !== undefined) {
-    const daysSinceUse = (Date.now() - lastUsed) / (1000 * 60 * 60 * 24);
-    if (daysSinceUse <= 30) {
-      score += Math.max(0, 50 - daysSinceUse * 2); // 30天内：50分递减到0分
+    const now = Date.now();
+    const hoursSinceUse = (now - lastUsed) / (1000 * 60 * 60);
+    const daysSinceUse = hoursSinceUse / 24;
+    
+    let timeScore = 0;
+    if (hoursSinceUse <= 1) {
+      // 最近1小时内：+500分
+      timeScore = 500;
+    } else if (hoursSinceUse <= 24) {
+      // 最近1天内：+300分
+      timeScore = 300;
+    } else if (daysSinceUse <= 7) {
+      // 最近7天内：+200分，线性递减
+      timeScore = 200 - (daysSinceUse - 1) * 20;
+    } else if (daysSinceUse <= 30) {
+      // 最近30天内：+100分，线性递减
+      timeScore = 100 - (daysSinceUse - 7) * (100 / 23);
+    } else if (daysSinceUse <= 90) {
+      // 最近90天内：+50分，线性递减
+      timeScore = 50 - (daysSinceUse - 30) * (50 / 60);
     }
+    
+    // 历史文件类型额外加权（×1.5），让历史文件更重视最近使用时间
+    if (isFileHistory && timeScore > 0) {
+      timeScore = Math.floor(timeScore * 1.5);
+    }
+    
+    score += Math.max(0, timeScore);
   }
 
   return score;
