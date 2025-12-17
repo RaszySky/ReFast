@@ -1,5 +1,32 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { flushSync } from "react-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { tauriApi } from "../api/tauri";
+import { trackEvent } from "../api/events";
+import type { AppInfo, FileHistoryItem, EverythingResult, MemoItem, PluginContext } from "../types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import { plugins, searchPlugins, executePlugin } from "../plugins";
+import { AppCenterContent } from "./AppCenterContent";
+import { MemoModal } from "./MemoModal";
+import { ContextMenu } from "./ContextMenu";
+import { ResultIcon } from "./ResultIcon";
+import { ErrorDialog } from "./ErrorDialog";
+import {
+  extractUrls,
+  extractEmails,
+  isValidJson,
+  highlightText,
+  isLikelyAbsolutePath,
+  isLnkPath,
+  calculateRelevanceScore,
+} from "../utils/launcherUtils";
+import { getThemeConfig, getLayoutConfig, type ResultStyle } from "../utils/themeConfig";
+import { handleEscapeKey, closePluginModalAndHide, closeMemoModalAndHide } from "../utils/launcherHandlers";
+import { clearAllResults, resetSelectedIndices, selectFirstHorizontal, selectFirstVertical } from "../utils/resultUtils";
+import { adjustWindowSize, getMainContainer as getMainContainerUtil } from "../utils/windowUtils";
 
 // 格式化最近使用时间的相对时间显示
 function formatLastUsedTime(timestamp: number): string {
@@ -34,18 +61,6 @@ function formatLastUsedTime(timestamp: number): string {
     }
   }
 }
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { tauriApi } from "../api/tauri";
-import { trackEvent } from "../api/events";
-import type { AppInfo, FileHistoryItem, EverythingResult, MemoItem, PluginContext } from "../types";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
-import { plugins, searchPlugins, executePlugin } from "../plugins";
-import { AppCenterContent } from "./AppCenterContent";
-import { MemoModal } from "./MemoModal";
-import { ContextMenu } from "./ContextMenu";
 
 // Icon extraction failure marker (must match backend constant)
 const ICON_EXTRACTION_FAILED_MARKER = "__ICON_EXTRACTION_FAILED__";
@@ -59,21 +74,6 @@ const isIconExtractionFailed = (icon: string | null | undefined): boolean => {
 const isValidIcon = (icon: string | null | undefined): boolean => {
   return icon !== null && icon !== undefined && icon.trim() !== '' && !isIconExtractionFailed(icon);
 };
-import { ResultIcon } from "./ResultIcon";
-import { ErrorDialog } from "./ErrorDialog";
-import {
-  extractUrls,
-  extractEmails,
-  isValidJson,
-  highlightText,
-  isLikelyAbsolutePath,
-  isLnkPath,
-  calculateRelevanceScore,
-} from "../utils/launcherUtils";
-import { getThemeConfig, getLayoutConfig, type ResultStyle } from "../utils/themeConfig";
-import { handleEscapeKey, closePluginModalAndHide, closeMemoModalAndHide } from "../utils/launcherHandlers";
-import { clearAllResults, resetSelectedIndices, selectFirstHorizontal, selectFirstVertical } from "../utils/resultUtils";
-import { adjustWindowSize, getMainContainer as getMainContainerUtil } from "../utils/windowUtils";
 
 type SearchResult = {
   type: "app" | "file" | "everything" | "url" | "email" | "memo" | "plugin" | "history" | "ai" | "json_formatter" | "settings";
