@@ -465,9 +465,24 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
     try {
       setIsDeletingHistory(true);
       setHistoryMessage(null);
-      const { start, end } = parseDateRangeToTs(historyStartDate, historyEndDate);
-      const removed = await tauriApi.deleteFileHistoryByRange(start, end);
-      setHistoryMessage(`已删除 ${removed} 条记录`);
+      
+      // 基于当前筛选结果进行删除，确保与显示的列表完全一致
+      // 获取当前筛选后的路径列表
+      const pathsToDelete = filteredHistoryItems.map(item => item.path);
+      
+      // 逐个删除（或者可以批量删除，但后端目前只支持单个删除）
+      let deletedCount = 0;
+      for (const path of pathsToDelete) {
+        try {
+          await tauriApi.deleteFileHistory(path);
+          deletedCount++;
+        } catch (error) {
+          console.error(`删除文件历史失败: ${path}`, error);
+          // 继续删除其他项，不因单个失败而停止
+        }
+      }
+      
+      setHistoryMessage(`已删除 ${deletedCount} 条记录`);
       await Promise.all([loadFileHistoryList(), fetchIndexStatus()]);
     } catch (error: any) {
       console.error("删除文件历史失败:", error);
@@ -1550,9 +1565,10 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
                         }}
                         className="px-2 py-1 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-green-400"
                       />
-                      {(historyStartDate || historyEndDate) && (
+                      {(historyStartDate || historyEndDate || historyDaysAgo) && (
                         <button
                           onClick={() => {
+                            setHistoryDaysAgo("");
                             setHistoryStartDate("");
                             setHistoryEndDate("");
                           }}

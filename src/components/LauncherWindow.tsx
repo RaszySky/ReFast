@@ -2686,19 +2686,20 @@ export function LauncherWindow() {
       // 优先使用 openHistoryData（最新的实时数据），如果没有才使用 file.last_used（数据库中的历史数据）
       // 注意：需要规范化路径以确保匹配（统一大小写和斜杠方向）
       const normalizePathForHistory = (path: string) => path.toLowerCase().replace(/\\/g, "/");
-      const aPathNormalized = a.app?.name ? undefined : normalizePathForHistory(a.path);
-      const bPathNormalized = b.app?.name ? undefined : normalizePathForHistory(b.path);
+      // 对于所有类型（应用、插件、文件等），都尝试从 openHistory 中获取最近使用时间
+      const aPathNormalized = normalizePathForHistory(a.path);
+      const bPathNormalized = normalizePathForHistory(b.path);
       // 在 openHistoryData 中查找规范化后的路径
-      const aLastUsedFromHistory = a.app?.name ? undefined : Object.entries(openHistoryData).find(([key]) => 
+      const aLastUsedFromHistory = Object.entries(openHistoryData).find(([key]) => 
         normalizePathForHistory(key) === aPathNormalized
       )?.[1];
-      const bLastUsedFromHistory = b.app?.name ? undefined : Object.entries(openHistoryData).find(([key]) => 
+      const bLastUsedFromHistory = Object.entries(openHistoryData).find(([key]) => 
         normalizePathForHistory(key) === bPathNormalized
       )?.[1];
-      const aUseCount = a.app?.name ? undefined : (a.file?.use_count);
-      const aLastUsed = a.app?.name ? undefined : (aLastUsedFromHistory || a.file?.last_used || 0);
-      const bUseCount = b.app?.name ? undefined : (b.file?.use_count);
-      const bLastUsed = b.app?.name ? undefined : (bLastUsedFromHistory || b.file?.last_used || 0);
+      const aUseCount = a.file?.use_count;
+      const aLastUsed = aLastUsedFromHistory || a.file?.last_used || 0;
+      const bUseCount = b.file?.use_count;
+      const bLastUsed = bLastUsedFromHistory || b.file?.last_used || 0;
       
       // 调试日志：横向列表排序（这是最终展示的排序）
       if (a.type === "app" && b.type === "app" && searchQuery.trim()) {
@@ -2710,7 +2711,7 @@ export function LauncherWindow() {
             openHistory中的值: aLastUsedFromHistory,
             file_last_used: a.file?.last_used,
             最终lastUsed: aLastUsed,
-            时间: aLastUsed > 0 ? new Date(aLastUsed * 1000).toLocaleString() : "无"
+            时间: (aLastUsed !== undefined && aLastUsed > 0) ? new Date(aLastUsed * 1000).toLocaleString() : "无"
           },
           b: {
             名称: b.displayName,
@@ -2719,13 +2720,50 @@ export function LauncherWindow() {
             openHistory中的值: bLastUsedFromHistory,
             file_last_used: b.file?.last_used,
             最终lastUsed: bLastUsed,
-            时间: bLastUsed > 0 ? new Date(bLastUsed * 1000).toLocaleString() : "无"
+            时间: (bLastUsed !== undefined && bLastUsed > 0) ? new Date(bLastUsed * 1000).toLocaleString() : "无"
           },
           openHistory所有键: Object.keys(openHistoryData).map(k => ({ 原始: k, 规范化: normalizePathForHistory(k) }))
         });
       }
       
-      // 如果有查询，优先按相关性评分排序（评分高的在前）
+      // 第一优先级：最近使用时间（最近打开的始终排在前面，无论是否有查询）
+      if (aLastUsed > 0 && bLastUsed > 0) {
+        // 两个都有使用时间，按时间降序排序（最近的在前面）
+        if (aLastUsed !== bLastUsed) {
+          const result = bLastUsed - aLastUsed;
+          // 调试日志：横向列表排序
+          if (searchQuery.trim()) {
+            console.log(`[排序调试-横向列表] 最近使用时间比较:`, {
+              a类型: a.type,
+              a名称: a.displayName,
+              a时间戳: aLastUsed,
+              a时间: new Date(aLastUsed * 1000).toLocaleString(),
+              b类型: b.type,
+              b名称: b.displayName,
+              b时间戳: bLastUsed,
+              b时间: new Date(bLastUsed * 1000).toLocaleString(),
+              时间差秒: Math.abs(aLastUsed - bLastUsed),
+              排序结果: result > 0 ? `${a.displayName} 在前` : `${b.displayName} 在前`,
+              返回值: result
+            });
+          }
+          return result;
+        }
+      } else if (aLastUsed > 0) {
+        // 只有 a 有使用时间，a 排在前面
+        if (searchQuery.trim()) {
+          console.log(`[排序调试-横向列表] 只有 ${a.displayName} (${a.type}) 有使用时间，排在前面`);
+        }
+        return -1;
+      } else if (bLastUsed > 0) {
+        // 只有 b 有使用时间，b 排在前面
+        if (searchQuery.trim()) {
+          console.log(`[排序调试-横向列表] 只有 ${b.displayName} (${b.type}) 有使用时间，排在前面`);
+        }
+        return 1;
+      }
+      
+      // 如果有查询，第二优先级：按相关性评分排序（评分高的在前）
       if (searchQuery.trim()) {
         const aScore = calculateRelevanceScore(
           a.displayName,
@@ -2752,86 +2790,9 @@ export function LauncherWindow() {
           b.type === "file"
         );
         
-        // 第一优先级：最近使用时间（最近打开的始终排在前面）
-        if (aLastUsed !== undefined && aLastUsed > 0 && bLastUsed !== undefined && bLastUsed > 0) {
-          // 两个都有使用时间，按时间降序排序（最近的在前面）
-          if (aLastUsed !== bLastUsed) {
-            const result = bLastUsed - aLastUsed;
-            // 调试日志：横向列表排序
-            if (a.type === "app" && b.type === "app" && searchQuery.trim()) {
-              console.log(`[排序调试-横向列表] 最近使用时间比较:`, {
-                a名称: a.displayName,
-                a时间戳: aLastUsed,
-                b名称: b.displayName,
-                b时间戳: bLastUsed,
-                时间差秒: Math.abs(aLastUsed - bLastUsed),
-                排序结果: result > 0 ? `${a.displayName} 在前` : `${b.displayName} 在前`,
-                返回值: result
-              });
-            }
-            return result;
-          }
-        } else if (aLastUsed !== undefined && aLastUsed > 0) {
-          // 只有 a 有使用时间，a 排在前面
-          if (a.type === "app" && b.type === "app" && searchQuery.trim()) {
-            console.log(`[排序调试-横向列表] 只有 ${a.displayName} 有使用时间，排在前面`);
-          }
-          return -1;
-        } else if (bLastUsed !== undefined && bLastUsed > 0) {
-          // 只有 b 有使用时间，b 排在前面
-          if (a.type === "app" && b.type === "app" && searchQuery.trim()) {
-            console.log(`[排序调试-横向列表] 只有 ${b.displayName} 有使用时间，排在前面`);
-          }
-          return 1;
-        } else {
-          // 两个都没有使用时间
-          if (a.type === "app" && b.type === "app" && searchQuery.trim()) {
-            console.log(`[排序调试-横向列表] ${a.displayName} 和 ${b.displayName} 都没有使用时间，继续其他排序规则`);
-          }
-        }
-        
         // 第二优先级：按评分降序排序（分数高的在前）
         if (bScore !== aScore) {
           return bScore - aScore;
-        }
-      } else {
-        // 没有查询时，直接按最近使用时间排序
-        // 第一优先级：最近使用时间（最近打开的始终排在前面）
-        if (aLastUsed !== undefined && aLastUsed > 0 && bLastUsed !== undefined && bLastUsed > 0) {
-          // 两个都有使用时间，按时间降序排序（最近的在前面）
-          if (aLastUsed !== bLastUsed) {
-            const result = bLastUsed - aLastUsed;
-            // 调试日志：横向列表排序（无查询时）
-            if (a.type === "app" && b.type === "app") {
-              console.log(`[排序调试-横向列表-无查询] 最近使用时间比较:`, {
-                a名称: a.displayName,
-                a时间戳: aLastUsed,
-                b名称: b.displayName,
-                b时间戳: bLastUsed,
-                时间差秒: Math.abs(aLastUsed - bLastUsed),
-                排序结果: result > 0 ? `${a.displayName} 在前` : `${b.displayName} 在前`,
-                返回值: result
-              });
-            }
-            return result;
-          }
-        } else if (aLastUsed !== undefined && aLastUsed > 0) {
-          // 只有 a 有使用时间，a 排在前面
-          if (a.type === "app" && b.type === "app") {
-            console.log(`[排序调试-横向列表-无查询] 只有 ${a.displayName} 有使用时间，排在前面`);
-          }
-          return -1;
-        } else if (bLastUsed !== undefined && bLastUsed > 0) {
-          // 只有 b 有使用时间，b 排在前面
-          if (a.type === "app" && b.type === "app") {
-            console.log(`[排序调试-横向列表-无查询] 只有 ${b.displayName} 有使用时间，排在前面`);
-          }
-          return 1;
-        } else {
-          // 两个都没有使用时间
-          if (a.type === "app" && b.type === "app") {
-            console.log(`[排序调试-横向列表-无查询] ${a.displayName} 和 ${b.displayName} 都没有使用时间，继续其他排序规则`);
-          }
         }
       }
       
@@ -2850,22 +2811,40 @@ export function LauncherWindow() {
       return (a.displayName || "").localeCompare(b.displayName || "");
     });
     
-    // 调试日志：横向列表排序后的最终结果
+    // 调试日志：横向列表排序后的最终结果（包含所有类型：应用、插件、系统文件夹等）
     if (searchQuery.trim()) {
-      const appResults = horizontal.filter(r => r.type === "app");
-      if (appResults.length > 0) {
-        console.log(`[排序调试-横向列表] 最终排序结果（共${appResults.length}个应用）:`, 
-          appResults.map((r, idx) => {
+      if (horizontal.length > 0) {
+        console.log(`[排序调试-横向列表] 最终排序结果（共${horizontal.length}项，包含应用、插件、系统文件夹等）:`, 
+          horizontal.map((r, idx) => {
             const normalizePathForHistory = (path: string) => path.toLowerCase().replace(/\\/g, "/");
             const pathNormalized = normalizePathForHistory(r.path);
             const lastUsedFromHistory = Object.entries(openHistoryData).find(([key]) => 
               normalizePathForHistory(key) === pathNormalized
             )?.[1];
             const lastUsed = lastUsedFromHistory || r.file?.last_used || 0;
+            
+            // 计算相关性评分
+            const score = calculateRelevanceScore(
+              r.displayName,
+              r.path,
+              searchQuery,
+              r.file?.use_count,
+              lastUsed,
+              r.type === "everything",
+              r.type === "app",
+              r.app?.name_pinyin,
+              r.app?.name_pinyin_initials,
+              r.type === "file"
+            );
+            
             return {
               排名: idx + 1,
+              类型: r.type,
               名称: r.displayName,
               路径: r.path,
+              插件ID: r.plugin?.id || "无",
+              相关性评分: score,
+              使用次数: r.file?.use_count || 0,
               最近使用时间: lastUsed > 0 ? new Date(lastUsed * 1000).toLocaleString() : "无",
               时间戳: lastUsed
             };
@@ -2895,6 +2874,49 @@ export function LauncherWindow() {
       }
       return result.type !== "plugin";
     });
+    
+    // 调试日志：splitResults 返回前的横向列表（包含所有类型：应用、插件、系统文件夹等）
+    if (searchQuery.trim()) {
+      if (horizontal.length > 0) {
+        console.log(`[排序调试-splitResults返回前] 横向列表（共${horizontal.length}项，包含应用、插件、系统文件夹等）:`, 
+          horizontal.map((r, idx) => {
+            const normalizePathForHistory = (path: string) => path.toLowerCase().replace(/\\/g, "/");
+            const pathNormalized = normalizePathForHistory(r.path);
+            const lastUsedFromHistory = Object.entries(openHistoryData).find(([key]) => 
+              normalizePathForHistory(key) === pathNormalized
+            )?.[1];
+            const lastUsed = lastUsedFromHistory || r.file?.last_used || 0;
+            
+            // 计算相关性评分
+            const score = calculateRelevanceScore(
+              r.displayName,
+              r.path,
+              searchQuery,
+              r.file?.use_count,
+              lastUsed,
+              r.type === "everything",
+              r.type === "app",
+              r.app?.name_pinyin,
+              r.app?.name_pinyin_initials,
+              r.type === "file"
+            );
+            
+            return {
+              排名: idx + 1,
+              类型: r.type,
+              名称: r.displayName,
+              路径: r.path,
+              插件ID: r.plugin?.id || "无",
+              相关性评分: score,
+              使用次数: r.file?.use_count || 0,
+              最近使用时间: lastUsed > 0 ? new Date(lastUsed * 1000).toLocaleString() : "无",
+              时间戳: lastUsed
+            };
+          })
+        );
+      }
+    }
+    
     return { horizontal, vertical };
   };
 
@@ -2946,6 +2968,48 @@ export function LauncherWindow() {
 
     // Split results into horizontal and vertical
     const { horizontal, vertical } = splitResults(allResults, openHistory, query);
+    
+    // 调试日志：loadResultsIncrementally 接收到的 horizontal（包含所有类型：应用、插件、系统文件夹等）
+    if (query.trim()) {
+      if (horizontal.length > 0) {
+        console.log(`[排序调试-loadResultsIncrementally接收] 横向列表（共${horizontal.length}项，包含应用、插件、系统文件夹等）:`, 
+          horizontal.map((r, idx) => {
+            const normalizePathForHistory = (path: string) => path.toLowerCase().replace(/\\/g, "/");
+            const pathNormalized = normalizePathForHistory(r.path);
+            const lastUsedFromHistory = Object.entries(openHistory).find(([key]) => 
+              normalizePathForHistory(key) === pathNormalized
+            )?.[1];
+            const lastUsed = lastUsedFromHistory || r.file?.last_used || 0;
+            
+            // 计算相关性评分
+            const score = calculateRelevanceScore(
+              r.displayName,
+              r.path,
+              query,
+              r.file?.use_count,
+              lastUsed,
+              r.type === "everything",
+              r.type === "app",
+              r.app?.name_pinyin,
+              r.app?.name_pinyin_initials,
+              r.type === "file"
+            );
+            
+            return {
+              排名: idx + 1,
+              类型: r.type,
+              名称: r.displayName,
+              路径: r.path,
+              插件ID: r.plugin?.id || "无",
+              相关性评分: score,
+              使用次数: r.file?.use_count || 0,
+              最近使用时间: lastUsed > 0 ? new Date(lastUsed * 1000).toLocaleString() : "无",
+              时间戳: lastUsed
+            };
+          })
+        );
+      }
+    }
 
     const INITIAL_COUNT = 100; // 初始显示100条
     const INCREMENT = 50; // 每次增加50条
@@ -2954,28 +3018,44 @@ export function LauncherWindow() {
     if (allResults.length <= INITIAL_COUNT) {
       // 如果当前已经有横向结果，且新的结果中没有横向结果，保留当前的横向结果
       // 这样可以确保应用结果（通常是横向结果）不会被Everything结果覆盖
-      const currentHorizontalRef = horizontalResultsRef.current || [];
-      const hasExistingHorizontal = currentHorizontalRef.length > 0;
-      const finalHorizontal = horizontal.length > 0 
-        ? horizontal 
-        : (hasExistingHorizontal ? currentHorizontalRef : []);
+      // 重要：始终使用新排序的 horizontal，不要使用旧的 currentHorizontalRef
+      // 这样可以确保横向列表始终按照最新的排序显示
+      const finalHorizontal = horizontal; // 直接使用排序后的结果，不使用旧的引用
       
-      // 调试日志：显示实际设置的横向结果（结果数量 <= 100）
+      // 调试日志：显示实际设置的横向结果（结果数量 <= 100，包含所有类型：应用、插件、系统文件夹等）
       if (query.trim()) {
-        const appResults = finalHorizontal.filter(r => r.type === "app");
-        if (appResults.length > 0) {
-          console.log(`[排序调试-实际设置-结果<=100] 横向列表实际设置的应用（共${appResults.length}个）:`, 
-            appResults.map((r, idx) => {
+        if (finalHorizontal.length > 0) {
+          console.log(`[排序调试-实际设置-结果<=100] 横向列表实际设置（共${finalHorizontal.length}项，包含应用、插件、系统文件夹等）:`, 
+            finalHorizontal.map((r, idx) => {
               const normalizePathForHistory = (path: string) => path.toLowerCase().replace(/\\/g, "/");
               const pathNormalized = normalizePathForHistory(r.path);
               const lastUsedFromHistory = Object.entries(openHistory).find(([key]) => 
                 normalizePathForHistory(key) === pathNormalized
               )?.[1];
               const lastUsed = lastUsedFromHistory || r.file?.last_used || 0;
+              
+              // 计算相关性评分
+              const score = calculateRelevanceScore(
+                r.displayName,
+                r.path,
+                query,
+                r.file?.use_count,
+                lastUsed,
+                r.type === "everything",
+                r.type === "app",
+                r.app?.name_pinyin,
+                r.app?.name_pinyin_initials,
+                r.type === "file"
+              );
+              
               return {
                 排名: idx + 1,
+                类型: r.type,
                 名称: r.displayName,
                 路径: r.path,
+                插件ID: r.plugin?.id || "无",
+                相关性评分: score,
+                使用次数: r.file?.use_count || 0,
                 最近使用时间: lastUsed > 0 ? new Date(lastUsed * 1000).toLocaleString() : "无",
                 时间戳: lastUsed
               };
@@ -3020,22 +3100,40 @@ export function LauncherWindow() {
       // 更新ref以跟踪当前的横向结果
       horizontalResultsRef.current = finalHorizontal;
       
-      // 调试日志：显示实际设置的横向结果
+      // 调试日志：显示实际设置的横向结果（包含所有类型：应用、插件、系统文件夹等）
       if (query.trim()) {
-        const appResults = finalHorizontal.filter(r => r.type === "app");
-        if (appResults.length > 0) {
-          console.log(`[排序调试-实际设置] 横向列表实际设置的应用（共${appResults.length}个，前${Math.min(20, appResults.length)}个）:`, 
-            appResults.slice(0, 20).map((r, idx) => {
+        if (finalHorizontal.length > 0) {
+          console.log(`[排序调试-实际设置] 横向列表实际设置（共${finalHorizontal.length}项，包含应用、插件、系统文件夹等，前${Math.min(20, finalHorizontal.length)}项）:`, 
+            finalHorizontal.slice(0, 20).map((r, idx) => {
               const normalizePathForHistory = (path: string) => path.toLowerCase().replace(/\\/g, "/");
               const pathNormalized = normalizePathForHistory(r.path);
               const lastUsedFromHistory = Object.entries(openHistory).find(([key]) => 
                 normalizePathForHistory(key) === pathNormalized
               )?.[1];
               const lastUsed = lastUsedFromHistory || r.file?.last_used || 0;
+              
+              // 计算相关性评分
+              const score = calculateRelevanceScore(
+                r.displayName,
+                r.path,
+                query,
+                r.file?.use_count,
+                lastUsed,
+                r.type === "everything",
+                r.type === "app",
+                r.app?.name_pinyin,
+                r.app?.name_pinyin_initials,
+                r.type === "file"
+              );
+              
               return {
                 排名: idx + 1,
+                类型: r.type,
                 名称: r.displayName,
                 路径: r.path,
+                插件ID: r.plugin?.id || "无",
+                相关性评分: score,
+                使用次数: r.file?.use_count || 0,
                 最近使用时间: lastUsed > 0 ? new Date(lastUsed * 1000).toLocaleString() : "无",
                 时间戳: lastUsed
               };
@@ -6151,9 +6249,51 @@ export function LauncherWindow() {
                 return (
                   <>
                     {/* 可执行文件和插件横向排列在第一行 */}
+                    {horizontalResults.length > 0 && (() => {
+                      // 调试日志：渲染时使用的横向列表（包含所有类型：应用、插件、系统文件夹等）
+                      if (query.trim()) {
+                        console.log(`[排序调试-渲染时] 横向列表最终渲染数据（共${horizontalResults.length}项）:`, 
+                          horizontalResults.map((r, idx) => {
+                            const normalizePathForHistory = (path: string) => path.toLowerCase().replace(/\\/g, "/");
+                            const pathNormalized = normalizePathForHistory(r.path);
+                            const lastUsedFromHistory = Object.entries(openHistory).find(([key]) => 
+                              normalizePathForHistory(key) === pathNormalized
+                            )?.[1];
+                            const lastUsed = lastUsedFromHistory || r.file?.last_used || 0;
+                            
+                            // 计算相关性评分
+                            const score = calculateRelevanceScore(
+                              r.displayName,
+                              r.path,
+                              query,
+                              r.file?.use_count,
+                              lastUsed,
+                              r.type === "everything",
+                              r.type === "app",
+                              r.app?.name_pinyin,
+                              r.app?.name_pinyin_initials,
+                              r.type === "file"
+                            );
+                            
+                            return {
+                              排名: idx + 1,
+                              类型: r.type,
+                              名称: r.displayName,
+                              路径: r.path,
+                              插件ID: r.plugin?.id || "无",
+                              相关性评分: score,
+                              使用次数: r.file?.use_count || 0,
+                              最近使用时间: lastUsed > 0 ? new Date(lastUsed * 1000).toLocaleString() : "无",
+                              时间戳: lastUsed
+                            };
+                          })
+                        );
+                      }
+                      return null;
+                    })()}
                     {horizontalResults.length > 0 && (
                       <div className="px-4 py-3 mb-2 border-b border-gray-200">
-                        <div 
+                        <div
                           ref={horizontalScrollContainerRef}
                           className="flex gap-3 pb-2 executable-scroll-container"
                         >
