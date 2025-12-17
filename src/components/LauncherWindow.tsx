@@ -5895,6 +5895,7 @@ export function LauncherWindow() {
                                   minWidth: '80px',
                                   minHeight: '80px',
                                 }}
+                                title={result.type === "app" ? result.path : undefined}
                               >
                                 {isSelected && (
                                   <div 
@@ -5979,6 +5980,7 @@ export function LauncherWindow() {
                       ? `launchApp 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards` 
                       : `fadeInUp 0.18s ease-out ${index * 0.02}s both`,
                   }}
+                  title={result.type === "app" ? result.path : undefined}
                 >
                   <div className={theme.indicator(isSelected)} />
                   <div className="flex items-center gap-3">

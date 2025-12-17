@@ -112,6 +112,7 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
   const [deleteBackupConfirmPath, setDeleteBackupConfirmPath] = useState<string | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [pendingDeleteCount, setPendingDeleteCount] = useState(0);
+  const [isRescanConfirmOpen, setIsRescanConfirmOpen] = useState(false);
   
   // 应用快捷键相关状态（需要在父组件管理，以便在其他地方使用）
   const [appHotkeys, setAppHotkeys] = useState<Record<string, { modifiers: string[]; key: string }>>({});
@@ -425,7 +426,12 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
     }, 100);
   };
 
-  const handleRescanApplications = async () => {
+  const handleRescanApplications = () => {
+    setIsRescanConfirmOpen(true);
+  };
+
+  const handleConfirmRescan = async () => {
+    setIsRescanConfirmOpen(false);
     try {
       setIsLoadingIndex(true);
       await tauriApi.rescanApplications();
@@ -436,6 +442,10 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
     } finally {
       setIsLoadingIndex(false);
     }
+  };
+
+  const handleCancelRescan = () => {
+    setIsRescanConfirmOpen(false);
   };
 
   const handleStartEverything = async () => {
@@ -1787,6 +1797,17 @@ export function AppCenterContent({ onPluginClick, onClose: _onClose }: AppCenter
         confirmText="确认删除"
         onConfirm={handleConfirmDeleteBackup}
         onCancel={handleCancelDeleteBackup}
+      />
+
+      <ConfirmDialog
+        isOpen={isRescanConfirmOpen}
+        title="重新扫描应用"
+        message="重新扫描应用将清除当前的应用索引缓存，并重新扫描系统开始菜单中的所有应用。这个过程可能需要几秒钟时间。"
+        confirmText="确认扫描"
+        cancelText="取消"
+        onConfirm={handleConfirmRescan}
+        onCancel={handleCancelRescan}
+        variant="warning"
       />
 
       <AppIndexList

@@ -834,7 +834,11 @@ export function AppIndexList({ isOpen, onClose, appHotkeys, onHotkeysChange }: A
                 const appHotkey = appHotkeys[item.path];
                 const isRecordingThis = recordingAppPath === item.path;
                 return (
-                  <div key={`${item.path}-${idx}`} className="px-6 py-3 flex items-center gap-4 hover:bg-gray-50 group relative">
+                  <div 
+                    key={`${item.path}-${idx}`} 
+                    className="px-6 py-3 flex items-center gap-4 hover:bg-gray-50 group relative"
+                    title={item.path}
+                  >
                     <div className="w-6 h-6 rounded bg-green-50 text-green-700 flex items-center justify-center text-xs flex-shrink-0">
                       {idx + 1}
                     </div>
