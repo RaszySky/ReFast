@@ -4449,13 +4449,13 @@ export function LauncherWindow() {
 
   const handleDownloadEverything = useCallback(async () => {
     try {
-      console.log("[Everything下载] 开始下载...");
+
       setIsDownloadingEverything(true);
       setEverythingDownloadProgress(0);
 
-      console.log("[Everything下载] 调用 tauriApi.downloadEverything()...");
+
       const installerPath = await tauriApi.downloadEverything();
-      console.log("[Everything下载] 下载完成，安装程序路径:", installerPath);
+
       setEverythingDownloadProgress(100);
 
       // 下载完成后，临时取消窗口置顶，确保安装程序显示在启动器之上
@@ -4463,15 +4463,15 @@ export function LauncherWindow() {
       await window.setAlwaysOnTop(false);
 
       // 自动打开安装程序
-      console.log("[Everything下载] 启动安装程序...");
+
       await tauriApi.launchFile(installerPath);
 
       // 下载逻辑结束，重置下载状态（不再弹出遮挡安装向导的提示框）
       setIsDownloadingEverything(false);
       setEverythingDownloadProgress(0);
-      console.log("[Everything下载] 完成");
+
     } catch (error) {
-      console.error("[Everything下载] 下载失败:", error);
+
       setIsDownloadingEverything(false);
       setEverythingDownloadProgress(0);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -6419,15 +6419,7 @@ export function LauncherWindow() {
                 </div>
                 {!isEverythingAvailable && (
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {(() => {
-                      console.log("[Everything下载] 按钮渲染检查:", {
-                        isEverythingAvailable,
-                        everythingError,
-                        isDownloadingEverything,
-                        shouldShowDownload: !everythingError || !everythingError.startsWith("SERVICE_NOT_RUNNING"),
-                      });
-                      return null;
-                    })()}
+
                     {everythingError && everythingError.startsWith("SERVICE_NOT_RUNNING") && (
                       <button
                         onClick={handleStartEverything}
@@ -6440,28 +6432,18 @@ export function LauncherWindow() {
                     {(!everythingError || !everythingError.startsWith("SERVICE_NOT_RUNNING")) && (
                       <button
                         ref={downloadButtonRef}
-                        onPointerDown={(e) => {
-                          console.log("[Everything下载] onPointerDown 触发", {
-                            pointerType: e.pointerType,
-                            button: e.button,
-                            disabled: isDownloadingEverything,
-                          });
-                        }}
+                        onPointerDown={(e) => {}}
                         onClick={(e) => {
-                          console.log("[Everything下载] onClick 触发", {
-                            disabled: isDownloadingEverything,
-                            target: e.target,
-                            currentTarget: e.currentTarget,
-                          });
+
                           if (!isDownloadingEverything) {
-                            console.log("[Everything下载] 通过 onClick 触发下载");
+
                             e.preventDefault();
                             e.stopPropagation();
                             handleDownloadEverything().catch((error) => {
-                              console.error("[Everything下载] handleDownloadEverything 抛出错误:", error);
+
                             });
                           } else {
-                            console.log("[Everything下载] 按钮已禁用，忽略点击");
+
                           }
                         }}
                         disabled={isDownloadingEverything}
