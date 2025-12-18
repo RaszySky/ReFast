@@ -1703,21 +1703,15 @@ export function LauncherWindow() {
     // 1. allFileHistoryCacheRef 在组件后面定义，访问会有初始化顺序问题
     // 2. filteredFiles 已经包含了搜索匹配的文件历史记录，如果系统文件夹在历史记录中且匹配搜索，应该已经在 filteredFiles 中
     
-    // 调试日志：检查 filteredFiles 中的使用次数
-    if (query.trim() && filteredFiles.length > 0) {
-      console.log(`[使用次数来源] filteredFiles 数量: ${filteredFiles.length}`);
-      filteredFiles.slice(0, 5).forEach((file, idx) => {
-        console.log(`[使用次数来源] filteredFiles[${idx}]: 路径=${file.path}, 使用次数=${file.use_count}, 最后使用=${file.last_used > 0 ? new Date(file.last_used * 1000).toLocaleString() : '无'}`);
-      });
-    }
+
     
     // 调试日志：检查系统文件夹
     if (query.trim() && systemFolders.length > 0) {
-      console.log(`[使用次数来源] systemFolders 数量: ${systemFolders.length}`);
+
       systemFolders.forEach((folder) => {
         const normalizedPath = folder.path.toLowerCase().replace(/\\/g, "/");
         const fileHistory = fileHistoryMap.get(normalizedPath);
-        console.log(`[使用次数来源] systemFolders "${folder.name}": 路径=${folder.path}, 是否在fileHistoryMap=${!!fileHistory}, 使用次数=${fileHistory?.use_count ?? 0}`);
+
       });
     }
     
@@ -1764,12 +1758,7 @@ export function LauncherWindow() {
           is_folder: folder.is_folder,
         };
         
-        // 调试日志：检查系统文件夹的使用次数
-        if (query.trim() && fileHistory) {
-          console.log(`[使用次数来源] 系统文件夹"${folder.name}": 从文件历史记录获取, 使用次数=${fileHistory.use_count}, 最后使用=${fileHistory.last_used > 0 ? new Date(fileHistory.last_used * 1000).toLocaleString() : '无'}`);
-        } else if (query.trim()) {
-          console.log(`[使用次数来源] 系统文件夹"${folder.name}": 未找到文件历史记录, 使用默认值0`);
-        }
+
         
         return {
           type: "file" as const,
@@ -1995,10 +1984,7 @@ export function LauncherWindow() {
           return !pathLower.endsWith('.exe') && !pathLower.endsWith('.lnk');
         })
         .map((file) => {
-          // 调试日志：检查构建结果时的使用次数
-          if (query.trim()) {
-            console.log(`[使用次数来源] 构建搜索结果: 路径=${file.path}, 使用次数=${file.use_count}, file对象引用=${file}`);
-          }
+
           return {
             type: "file" as const,
             file,
@@ -4553,13 +4539,7 @@ export function LauncherWindow() {
               existingItem.last_used = timestampToUpdate;
               existingItem.use_count += 1;
               
-              console.log(`[历史记录使用次数] ========== 应用打开 ==========`);
-              console.log(`[历史记录使用次数] 路径: ${result.path}`);
-              console.log(`[历史记录使用次数] 规范化路径: ${normalizedPath}`);
-              console.log(`[历史记录使用次数] 应用名称: ${result.displayName}`);
-              console.log(`[历史记录使用次数] 更新前 - 使用次数: ${oldUseCount}, 最后使用时间: ${oldLastUsed > 0 ? new Date(oldLastUsed * 1000).toLocaleString() : '无'}`);
-              console.log(`[历史记录使用次数] 更新后 - 使用次数: ${existingItem.use_count}, 最后使用时间: ${new Date(timestampToUpdate * 1000).toLocaleString()}`);
-              console.log(`[历史记录使用次数] filteredFiles 更新前数量: ${filteredFiles.length}`);
+
               
               // 立即更新 filteredFiles 状态，使UI显示最新的使用次数
               setFilteredFiles(prevFiles => {
@@ -4568,7 +4548,7 @@ export function LauncherWindow() {
                   const filePath1 = fileNormalized.toLowerCase().replace(/\\/g, '/');
                   const filePath2 = normalizedPath.toLowerCase().replace(/\\/g, '/');
                   if (filePath1 === filePath2) {
-                    console.log(`[历史记录使用次数] filteredFiles 中找到匹配项，更新使用次数: ${file.use_count} -> ${file.use_count + 1}`);
+
                     return {
                       ...file,
                       last_used: timestampToUpdate,
@@ -4577,12 +4557,11 @@ export function LauncherWindow() {
                   }
                   return file;
                 });
-                console.log(`[历史记录使用次数] filteredFiles 更新后数量: ${updatedFiles.length}`);
+
                 return updatedFiles;
               });
               
-              console.log(`[历史记录使用次数] 缓存项总数: ${allFileHistoryCacheRef.current.length}`);
-              console.log(`[历史记录使用次数] ====================================`);
+
             } else {
               // 添加新项（如果路径存在）
               const name = normalizedPath.split(/[\\/]/).pop() || normalizedPath;
@@ -4743,9 +4722,7 @@ export function LauncherWindow() {
           // 只需要刷新缓存以同步后端更新后的数据
           await tauriApi.launchFile(result.file.path);
           
-          console.log(`[历史记录使用次数] ========== 文件打开 ==========`);
-          console.log(`[历史记录使用次数] 路径: ${result.file.path}`);
-          console.log(`[历史记录使用次数] 说明: launchFile 已自动更新后端使用次数，现在刷新前端缓存`);
+
           
           // 刷新文件历史缓存以同步后端更新后的数据（包括使用次数）
           void refreshFileHistoryCache()
@@ -4828,12 +4805,7 @@ export function LauncherWindow() {
             existingItem.last_used = timestampToUpdate;
             existingItem.use_count += 1;
             
-            console.log(`[历史记录使用次数] ========== Everything 文件打开 ==========`);
-            console.log(`[历史记录使用次数] 路径: ${everythingPath}`);
-            console.log(`[历史记录使用次数] 规范化路径: ${normalizedPath}`);
-            console.log(`[历史记录使用次数] 更新前 - 使用次数: ${oldUseCount}, 最后使用时间: ${oldLastUsed > 0 ? new Date(oldLastUsed * 1000).toLocaleString() : '无'}`);
-            console.log(`[历史记录使用次数] 更新后 - 使用次数: ${existingItem.use_count}, 最后使用时间: ${new Date(timestampToUpdate * 1000).toLocaleString()}`);
-            console.log(`[历史记录使用次数] filteredFiles 更新前数量: ${filteredFiles.length}`);
+
             
             // 立即更新 filteredFiles 状态，使UI显示最新的使用次数
             setFilteredFiles(prevFiles => {
@@ -4842,7 +4814,7 @@ export function LauncherWindow() {
                 const filePath1 = fileNormalized.toLowerCase().replace(/\\/g, '/');
                 const filePath2 = normalizedPath.toLowerCase().replace(/\\/g, '/');
                 if (filePath1 === filePath2) {
-                  console.log(`[历史记录使用次数] filteredFiles 中找到匹配项，更新使用次数: ${file.use_count} -> ${file.use_count + 1}`);
+
                   return {
                     ...file,
                     last_used: timestampToUpdate,
@@ -4851,12 +4823,11 @@ export function LauncherWindow() {
                 }
                 return file;
               });
-              console.log(`[历史记录使用次数] filteredFiles 更新后数量: ${updatedFiles.length}`);
+
               return updatedFiles;
             });
             
-            console.log(`[历史记录使用次数] 缓存项总数: ${allFileHistoryCacheRef.current.length}`);
-            console.log(`[历史记录使用次数] ====================================`);
+
           } else {
             // 添加新项
             const name = normalizedPath.split(/[\\/]/).pop() || normalizedPath;

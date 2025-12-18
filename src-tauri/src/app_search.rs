@@ -1517,18 +1517,12 @@ pub mod windows {
         eprintln!("[EXE图标Native] 开始提取: file_path={}", file_path_str);
         
         // 优先使用 IShellItemImageFactory（最可靠）
-        // 尝试多次重试，确保使用正确的标志
-        for retry in 0..3 {
-            if let Some(result) = extract_icon_png_via_shell(file_path, 32) {
-                eprintln!("[EXE图标Native] IShellItemImageFactory 成功: file_path={}, retry={}, icon_len={}", 
-                    file_path_str, retry, result.len());
-                return Some(result);
-            } else {
-                eprintln!("[EXE图标Native] IShellItemImageFactory 失败 (重试 {}): file_path={}", retry, file_path_str);
-                if retry < 2 {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            }
+        if let Some(result) = extract_icon_png_via_shell(file_path, 32) {
+            eprintln!("[EXE图标Native] IShellItemImageFactory 成功: file_path={}, icon_len={}", 
+                file_path_str, result.len());
+            return Some(result);
+        } else {
+            eprintln!("[EXE图标Native] IShellItemImageFactory 失败: file_path={}", file_path_str);
         }
         
         // 回退方案: 使用 ExtractIconExW + icon_to_png
@@ -2044,22 +2038,14 @@ try {
         
         // 方法 1: 优先直接从 .lnk 文件本身提取图标（与测试函数一致）
         // 测试发现：直接从 .lnk 文件提取的图标是正确的，特别是对于系统快捷方式和某些 .exe 快捷方式
-        // 尝试多次重试，因为 COM 状态或路径格式可能导致首次失败
         eprintln!("[LNK图标Native] 尝试直接从 .lnk 文件提取: lnk_path={}", lnk_path_str);
-        for retry in 0..3 {
-            if let Some(result) = extract_icon_png_via_shell(lnk_path, 32) {
-                eprintln!("[LNK图标Native] 直接从 .lnk 文件提取成功: lnk_path={}, icon_len={}, retry={}", 
-                    lnk_path_str, result.len(), retry);
-                return Some(result);
-            } else {
-                eprintln!("[LNK图标Native] 直接从 .lnk 文件提取失败 (重试 {}): lnk_path={}", retry, lnk_path_str);
-                // 短暂延迟后重试（给 COM 一些时间）
-                if retry < 2 {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            }
+        if let Some(result) = extract_icon_png_via_shell(lnk_path, 32) {
+            eprintln!("[LNK图标Native] 直接从 .lnk 文件提取成功: lnk_path={}, icon_len={}", 
+                lnk_path_str, result.len());
+            return Some(result);
+        } else {
+            eprintln!("[LNK图标Native] 直接从 .lnk 文件提取失败，尝试回退方案: lnk_path={}", lnk_path_str);
         }
-        eprintln!("[LNK图标Native] 直接从 .lnk 文件提取失败（已重试3次），尝试回退方案: lnk_path={}", lnk_path_str);
         
         // 方法 2: 如果直接从 .lnk 文件提取失败，解析 .lnk 文件获取 TargetPath 作为回退方案
         let (icon_source_path, icon_index) = match get_lnk_icon_location(lnk_path) {
@@ -2426,26 +2412,14 @@ try {
         
         // 4. 测试直接从 .lnk 文件本身提取（使用 Shell API）
         eprintln!("[测试图标提取] 测试直接从 .lnk 文件提取: path={}", lnk_path_str);
-        // 尝试多次重试，确保与实际提取函数一致
-        let mut direct_lnk_result = None;
-        for retry in 0..3 {
-            if let Some(result) = extract_icon_png_via_shell(lnk_path, 32) {
-                eprintln!("[测试图标提取] 直接从 .lnk 文件提取成功: path={}, retry={}, icon_len={}", 
-                    lnk_path_str, retry, result.len());
-                direct_lnk_result = Some(result);
-                break;
-            } else {
-                eprintln!("[测试图标提取] 直接从 .lnk 文件提取失败 (重试 {}): path={}", retry, lnk_path_str);
-                if retry < 2 {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            }
-        }
-        if let Some(result) = direct_lnk_result {
-            results.push(("直接从 .lnk 文件 -> Shell API".to_string(), Some(result)));
+        let direct_lnk_result = extract_icon_png_via_shell(lnk_path, 32);
+        if let Some(ref result) = direct_lnk_result {
+            eprintln!("[测试图标提取] 直接从 .lnk 文件提取成功: path={}, icon_len={}", 
+                lnk_path_str, result.len());
         } else {
-            results.push(("直接从 .lnk 文件 -> Shell API".to_string(), None));
+            eprintln!("[测试图标提取] 直接从 .lnk 文件提取失败: path={}", lnk_path_str);
         }
+        results.push(("直接从 .lnk 文件 -> Shell API".to_string(), direct_lnk_result));
         
         // 5. 测试 SHGetFileInfoW 方法（如果 TargetPath 存在）
         if let Some(ref target_path_str) = target_path_str {
