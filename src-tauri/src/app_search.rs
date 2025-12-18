@@ -618,11 +618,21 @@ pub mod windows {
 
             eprintln!("[decode_powershell_output] 输入字节长度: {}", bytes.len());
 
-            // 回退方案：PowerShell 直接输出 JSON（包含 \uXXXX Unicode 转义）
-            // ConvertTo-Json 会自动将非 ASCII 字符转义为 \uXXXX，serde_json 可以正确解析
-            // 我们需要正确处理 PowerShell 的输出编码（可能是 UTF-16LE 或其他）
+            // 由于我们使用了 -OutputEncoding UTF8，优先尝试 UTF-8 解码
+            eprintln!("[decode_powershell_output] 尝试 UTF-8 解码");
+            match String::from_utf8(bytes.to_vec()) {
+                Ok(s) => {
+                    eprintln!("[decode_powershell_output] UTF-8 解码成功，字符串长度: {}", s.len());
+                    let preview: String = s.chars().take(200).collect();
+                    eprintln!("[decode_powershell_output] 解码结果预览: {}", preview);
+                    return Ok(s);
+                }
+                Err(e) => {
+                    eprintln!("[decode_powershell_output] UTF-8 解码失败: {}，尝试其他编码...", e);
+                }
+            }
             
-            // 首先尝试 UTF-16LE 解码（PowerShell 默认）
+            // 回退方案1：尝试 UTF-16LE 解码（旧版 PowerShell 或未设置 OutputEncoding 的情况）
             if bytes.len() % 2 == 0 && bytes.len() >= 2 {
                 let has_bom = bytes.starts_with(&[0xFF, 0xFE]);
                 eprintln!("[decode_powershell_output] 尝试 UTF-16LE 解码 (has_bom: {})", has_bom);
@@ -651,35 +661,24 @@ pub mod windows {
                 }
             }
 
-            // 如果 UTF-16LE 失败，尝试 UTF-8
-            eprintln!("[decode_powershell_output] 尝试 UTF-8 解码");
-            match String::from_utf8(bytes.to_vec()) {
-                Ok(s) => {
-                    eprintln!("[decode_powershell_output] UTF-8 解码成功，字符串长度: {}", s.len());
-                    let preview: String = s.chars().take(200).collect();
-                    eprintln!("[decode_powershell_output] 解码结果预览: {}", preview);
-                    Ok(s)
+            // 回退方案2：尝试使用 OEM 代码页解码
+            eprintln!("[decode_powershell_output] 尝试 OEM 代码页解码");
+            match decode_oem_bytes(bytes) {
+                Ok(oem_str) => {
+                    let preview: String = oem_str.chars().take(200).collect();
+                    eprintln!("[decode_powershell_output] OEM 解码成功，预览: {}", preview);
+                    return Ok(oem_str);
                 }
-                Err(e) => {
-                    eprintln!("[decode_powershell_output] UTF-8 解码失败: {}", e);
-                    // 尝试使用 OEM 代码页解码（计划 B）
-                    match decode_oem_bytes(bytes) {
-                        Ok(oem_str) => {
-                            let preview: String = oem_str.chars().take(200).collect();
-                            eprintln!("[decode_powershell_output] OEM 解码成功，预览: {}", preview);
-                            return Ok(oem_str);
-                        }
-                        Err(oem_err) => {
-                            eprintln!("[decode_powershell_output] OEM 解码失败: {}", oem_err);
-                        }
-                    }
-                    // 最后尝试 lossy 解码
-                    let lossy = String::from_utf8_lossy(bytes);
-                    let preview: String = lossy.chars().take(200).collect();
-                    eprintln!("[decode_powershell_output] 使用 UTF-8 lossy 解码，预览: {}", preview);
-                    Ok(lossy.to_string())
+                Err(oem_err) => {
+                    eprintln!("[decode_powershell_output] OEM 解码失败: {}", oem_err);
                 }
             }
+            
+            // 最后回退：使用 UTF-8 lossy 解码
+            let lossy = String::from_utf8_lossy(bytes);
+            let preview: String = lossy.chars().take(200).collect();
+            eprintln!("[decode_powershell_output] 使用 UTF-8 lossy 解码，预览: {}", preview);
+            Ok(lossy.to_string())
         }
 
         // PowerShell script: enumerate UWP apps using Get-StartApps
@@ -711,8 +710,9 @@ pub mod windows {
         }
         "#;
 
-        // 直接使用 PowerShell，PowerShell 默认输出 UTF-16LE
-        // 解码函数会正确处理 UTF-16LE 编码
+        // 使用 PowerShell 扫描 UWP 应用
+        // 通过 -OutputEncoding UTF8 强制 UTF-8 编码输出，避免 UTF-16LE 解码问题
+        // 这样可以确保 "B64JSON:" 等前缀能被正确识别，不会出现 UNKNOWN 模式的乱码
         // #region agent log - before spawn
         agent_log(
             "H1",
@@ -732,6 +732,8 @@ pub mod windows {
             .arg("-NoLogo")
             .arg("-NoProfile")
             .arg("-NonInteractive")
+            .arg("-OutputEncoding")
+            .arg("UTF8")
             .arg("-Command")
             .arg(script)
             .output()
