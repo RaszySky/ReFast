@@ -1242,8 +1242,11 @@ pub async fn remove_app_from_index(app_path: String, app: tauri::AppHandle) -> R
         let initial_len = apps.len();
         apps.retain(|app_info| app_info.path != app_path);
         
+        // 如果应用不在索引中，这实际上是我们想要的状态，所以返回成功而不是错误
         if apps.len() == initial_len {
-            return Err(format!("未找到路径为 '{}' 的应用", app_path));
+            // 应用已经不在索引中，这是一个幂等操作，返回成功
+            println!("[删除应用] 应用不在索引中（可能已被删除）: {}", app_path);
+            return Ok(());
         }
 
         // 更新缓存（用新的 Arc 替换）
@@ -1253,6 +1256,7 @@ pub async fn remove_app_from_index(app_path: String, app: tauri::AppHandle) -> R
         let app_data_dir = get_app_data_dir(&app_clone)?;
         let _ = app_search::windows::save_cache(&app_data_dir, &apps);
 
+        println!("[删除应用] 成功从索引中删除: {}", app_path);
         Ok(())
     })
     .await

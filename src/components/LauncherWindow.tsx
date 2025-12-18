@@ -184,9 +184,6 @@ export function LauncherWindow() {
   const isHorizontalNavigationRef = useRef(false); // 标记是否是横向导航切换
   const isAutoSelectingFirstHorizontalRef = useRef(false); // 标记是否正在自动选择第一个横向结果（用于防止scrollIntoView）
   const justJumpedToVerticalRef = useRef(false); // 标记是否刚刚从横向跳转到纵向（用于防止results useEffect重置selectedIndex）
-  // 所有应用列表缓存（前端搜索使用）
-  const allAppsCacheRef = useRef<AppInfo[]>([]);
-  const allAppsCacheLoadedRef = useRef<boolean>(false);
   
   // 存储从文件历史记录中提取的图标（路径 -> 图标数据）
   const extractedFileIconsRef = useRef<Map<string, string>>(new Map());
@@ -654,8 +651,6 @@ export function LauncherWindow() {
           const filteredApps = filterWindowsApps(allApps);
           setApps(filteredApps);
           // 不设置 filteredApps，等待用户输入查询时再设置
-          // 注意：allAppsCacheRef 在函数组件内部定义，这里无法直接访问
-          // 应用列表会在 performAppSearch 首次调用时自动加载到缓存
         }
       } catch (error) {
         console.error("Failed to preload applications:", error);
@@ -1773,23 +1768,13 @@ export function LauncherWindow() {
         const normalizedAppPath = app.path.toLowerCase().replace(/\\/g, "/");
         const fileHistory = fileHistoryMap.get(normalizedAppPath);
         
-        // 如果应用没有图标，尝试从缓存中查找匹配的应用并获取图标
-        // 优先从 apps 状态查找，如果没有则从 allAppsCacheRef 查找
+        // 如果应用没有图标，尝试从 apps 状态中查找匹配的应用并获取图标
         let appWithIcon = app;
         if (!isValidIcon(app.icon)) {
-          // 先从 apps 状态查找
-          let matchedApp = apps.find((a) => {
+          const matchedApp = apps.find((a) => {
             const normalizedPath = a.path.toLowerCase().replace(/\\/g, "/");
             return normalizedPath === normalizedAppPath;
           });
-          
-          // 如果 apps 状态中没有找到，从 allAppsCacheRef 查找
-          if (!matchedApp || !isValidIcon(matchedApp.icon)) {
-            matchedApp = allAppsCacheRef.current.find((a) => {
-              const normalizedPath = a.path.toLowerCase().replace(/\\/g, "/");
-              return normalizedPath === normalizedAppPath;
-            });
-          }
           
           if (matchedApp && isValidIcon(matchedApp.icon)) {
             appWithIcon = { ...app, icon: matchedApp.icon! };
@@ -3471,8 +3456,6 @@ export function LauncherWindow() {
               setApps(filteredApps);
               setFilteredApps(filteredApps.slice(0, 10));
               setIsLoading(false);
-              // 应用列表更新，更新前端搜索缓存（通过 clearAppSearchCache 触发重新加载）
-              clearAppSearchCache();
               
               // 清理监听器
               if (unlistenComplete) unlistenComplete();
@@ -3523,9 +3506,6 @@ export function LauncherWindow() {
           const filteredApps = filterWindowsApps(allApps);
           setApps(filteredApps);
           setFilteredApps(filteredApps.slice(0, 10));
-          // 应用列表更新，更新前端搜索缓存
-          allAppsCacheRef.current = filteredApps;
-          allAppsCacheLoadedRef.current = true;
         } catch (error) {
           console.error("Failed to load applications:", error);
           setApps([]);
@@ -3542,35 +3522,6 @@ export function LauncherWindow() {
     }
   };
 
-  // ========== 性能调试配置：用于定位性能瓶颈 ==========
-  // 修改这些值来屏蔽/启用各个功能，定位性能问题
-  const APP_SEARCH_DEBUG_CONFIG = {
-    // 是否启用查询验证
-    enableQueryValidation: true,
-    // 是否启用应用列表加载检查
-    enableEnsureAppsLoaded: false,  // 已屏蔽：测试其他步骤性能
-    // 是否执行实际搜索（调用后端 API）
-    enablePerformSearch: true,       // ❌ 已屏蔽：应用搜索功能已禁用
-    // 是否更新搜索结果
-    enableUpdateResults: true,
-    // 是否清空旧结果
-    enableClearResults: true,
-    // 是否输出性能日志
-    enablePerformanceLog: true,
-  };
-  // ========== 调试配置结束 ==========
-
-  // 验证搜索查询是否有效
-  const validateSearchQuery = (searchQuery: string): boolean => {
-    return !!(searchQuery && searchQuery.trim() !== "");
-  };
-
-  // 确保应用列表已加载
-  const ensureAppsLoaded = async (): Promise<void> => {
-    if (apps.length === 0 && !isLoading) {
-      await loadApplications();
-    }
-  };
 
   // 过滤掉 WindowsApps 路径的应用（前端双重保险）
   const filterWindowsApps = useCallback((apps: AppInfo[]): AppInfo[] => {
@@ -3589,169 +3540,7 @@ export function LauncherWindow() {
     return /[\u4e00-\u9fa5]/.test(str);
   };
 
-  // 前端搜索应用（基于缓存的应用列表）
-  const searchAppsFrontend = (query: string, apps: AppInfo[]): AppInfo[] => {
-    if (!query || query.trim() === "") {
-      const defaultResults = apps.slice(0, 10);
 
-      return defaultResults;
-    }
-
-    const queryLower = query.trim().toLowerCase();
-    const queryIsPinyin = !containsChinese(queryLower);
-    
-    const MAX_PERFECT_MATCHES = 3;
-    const MAX_RESULTS = 20;
-
-    // 使用索引和分数，避免频繁克隆
-    const results: Array<{ index: number; score: number }> = [];
-    let perfectMatches = 0;
-
-    for (let idx = 0; idx < apps.length; idx++) {
-      const app = apps[idx];
-      let score = 0;
-
-      // 名称匹配（最高优先级）
-      const nameLower = app.name.toLowerCase();
-      
-        // 优化：使用更高效的匹配顺序，减少不必要的字符串操作
-        if (nameLower === queryLower) {
-          score += 1000;
-          perfectMatches++;
-          // 短查询（如 "qq"）立即返回第一个完全匹配
-          if (queryLower.length <= 3 && perfectMatches >= 1) {
-            results.push({ index: idx, score });
-            break;
-          }
-          // 找到足够完全匹配时提前退出
-          if (perfectMatches >= MAX_PERFECT_MATCHES) {
-            results.push({ index: idx, score });
-            break;
-          }
-        } else {
-          // 优化：只在非完全匹配时才执行其他检查
-          // 先检查 startsWith（更常见的情况），再检查 includes（更耗时）
-          if (nameLower.startsWith(queryLower)) {
-            score += 500;
-          } else if (nameLower.includes(queryLower)) {
-            score += 100;
-          }
-        }
-
-      // 拼音匹配（如果查询是拼音，且名称未完全匹配）
-      // 优化：只在名称匹配分数较低时才检查拼音，避免不必要的字符串操作
-      if (score < 500 && queryIsPinyin && app.name_pinyin && app.name_pinyin_initials) {
-        // 完整拼音匹配
-        if (app.name_pinyin === queryLower) {
-          score += 800;
-          perfectMatches++;
-          if (perfectMatches >= MAX_PERFECT_MATCHES) {
-            results.push({ index: idx, score });
-            break;
-          }
-        } else if (app.name_pinyin.startsWith(queryLower)) {
-          score += 400;
-        } else if (app.name_pinyin.includes(queryLower)) {
-          score += 150;
-        }
-
-        // 拼音首字母匹配（只在拼音未完全匹配时检查）
-        if (score < 800) {
-          if (app.name_pinyin_initials === queryLower) {
-            score += 600;
-          } else if (app.name_pinyin_initials.startsWith(queryLower)) {
-            score += 300;
-          } else if (app.name_pinyin_initials.includes(queryLower)) {
-            score += 120;
-          }
-        }
-      }
-
-      // 路径匹配（仅在名称未匹配时检查，节省时间）
-      if (score === 0) {
-        const pathLower = app.path.toLowerCase();
-        if (pathLower.includes(queryLower)) {
-          score += 10;
-        }
-      }
-
-      if (score > 0) {
-        results.push({ index: idx, score });
-      }
-    }
-
-    // 如果有完全匹配且提前退出，直接返回
-    if (perfectMatches >= MAX_PERFECT_MATCHES && results.length <= MAX_PERFECT_MATCHES) {
-      const finalResults = results.map((r) => apps[r.index]);
-
-      return finalResults;
-    }
-
-    // 按分数排序
-    results.sort((a, b) => b.score - a.score);
-    
-    // 限制结果数量并返回
-    const finalResults = results.slice(0, MAX_RESULTS).map((r) => apps[r.index]);
-
-    return finalResults;
-  };
-
-  // 执行应用搜索（前端搜索，使用缓存的应用列表）
-  const performAppSearch = async (searchQuery: string): Promise<AppInfo[]> => {
-
-    
-    // 如果缓存未加载，先加载所有应用
-    if (!allAppsCacheLoadedRef.current || allAppsCacheRef.current.length === 0) {
-
-      try {
-        const allApps = await tauriApi.scanApplications();
-
-        const filteredApps = filterWindowsApps(allApps);
-
-        allAppsCacheRef.current = filteredApps;
-        allAppsCacheLoadedRef.current = true;
-      } catch (error) {
-
-        return [];
-      }
-    }
-
-
-    // 使用前端搜索
-    const results = searchAppsFrontend(searchQuery, allAppsCacheRef.current);
-
-
-    return results;
-  };
-  
-  // 清空应用列表缓存（当应用列表更新时调用）
-  const clearAppSearchCache = useCallback(() => {
-    allAppsCacheRef.current = [];
-    allAppsCacheLoadedRef.current = false;
-  }, []);
-
-  // 更新搜索结果（带查询验证）
-  const updateAppSearchResults = (results: AppInfo[], searchQuery: string): void => {
-    const currentQueryTrimmed = query.trim();
-    const searchQueryTrimmed = searchQuery.trim();
-    const shouldUpdate = currentQueryTrimmed === searchQueryTrimmed;
-    
-    // 使用普通状态更新，React 18 会自动优化渲染性能
-    // 移除 flushSync，因为它会在某些情况下导致同步渲染阻塞主线程
-    if (shouldUpdate) {
-
-      setFilteredApps(results);
-    } else {
-      // 查询在搜索过程中已改变，忽略结果
-
-      setFilteredApps([]);
-    }
-  };
-
-  // 清空应用搜索结果
-  const clearAppSearchResults = (): void => {
-    setFilteredApps([]);
-  };
 
   // 系统文件夹列表（缓存，避免每次搜索都调用后端）
   const systemFoldersListRef = useRef<Array<{ name: string; path: string; display_name: string; is_folder: boolean; icon?: string; name_pinyin?: string; name_pinyin_initials?: string }>>([]);
@@ -3835,72 +3624,27 @@ export function LauncherWindow() {
     }
   };
 
-  // 主搜索函数：协调各个子功能
+  // 主搜索函数：直接使用后端搜索
   const searchApplications = async (searchQuery: string) => {
-
-    
-    // 立即清空旧结果，避免显示上一个搜索的结果
-    if (APP_SEARCH_DEBUG_CONFIG.enableClearResults) {
-      clearAppSearchResults();
-    }
-    
     try {
-      // 简化验证：只验证一次，避免重复验证的开销
-      if (APP_SEARCH_DEBUG_CONFIG.enableQueryValidation) {
-        const isValid = validateSearchQuery(searchQuery);
-        if (!isValid) {
-    
-          if (APP_SEARCH_DEBUG_CONFIG.enableClearResults) {
-            clearAppSearchResults();
-          }
-          return;
-        }
+      // 清空旧结果，避免显示上一个搜索的结果
+      setFilteredApps([]);
+      
+      // 验证查询
+      if (!searchQuery || searchQuery.trim() === "") {
+        return;
       }
       
-      // 确保应用列表已加载（仅在需要时）
-      if (APP_SEARCH_DEBUG_CONFIG.enableEnsureAppsLoaded) {
-        await ensureAppsLoaded();
-      }
+      // 直接调用后端搜索（既搜索又触发图标提取）
+      const results = await tauriApi.searchApplications(searchQuery);
       
-      // 执行搜索
-      let results: AppInfo[] = [];
-      if (APP_SEARCH_DEBUG_CONFIG.enablePerformSearch) {
-  
-        results = await performAppSearch(searchQuery);
-  
-  
-  
-      } else {
-  
-      }
-      
-      // 触发后端图标提取：调用后端搜索以触发图标提取逻辑（即使不使用返回结果）
-      // 后端会在后台提取缺少图标的应用图标，并通过事件通知前端更新
-
-      
-      // 总是调用后端搜索以触发图标提取（后端会自己检查哪些应用缺少图标）
-      // 即使前端搜索结果为空或所有应用都有图标，后端也可能需要更新某些应用的图标
-      // 因为前端搜索可能因为缓存问题没有返回完整结果，而后端搜索会返回完整结果
-      tauriApi.searchApplications(searchQuery)
-        .then(() => {
-          // 静默处理后端搜索结果，仅用于触发图标提取
-        })
-        .catch(() => {
-          // 静默处理错误，避免控制台污染
-        });
-      
-      // 更新搜索结果（带查询验证）
-      if (APP_SEARCH_DEBUG_CONFIG.enableUpdateResults) {
-        updateAppSearchResults(results, searchQuery);
+      // 验证查询未改变，更新结果
+      if (query.trim() === searchQuery.trim()) {
+        setFilteredApps(results);
       }
     } catch (error) {
-      // 仅在查询为空时清空结果
-      if (APP_SEARCH_DEBUG_CONFIG.enableQueryValidation && !validateSearchQuery(searchQuery)) {
-        if (APP_SEARCH_DEBUG_CONFIG.enableClearResults) {
-          clearAppSearchResults();
-        }
-      }
-    } finally {
+      console.error("Search applications failed:", error);
+      setFilteredApps([]);
     }
   };
 
@@ -4069,13 +3813,12 @@ export function LauncherWindow() {
               
               // 检查应用列表中是否已有该路径的应用及其有效图标
               const normalizedPath = file.path.toLowerCase().replace(/\\/g, "/");
-              const matchedApp = allAppsCacheRef.current.find((app) => {
+              const matchedApp = apps.find((app) => {
                 const appPath = app.path.toLowerCase().replace(/\\/g, "/");
                 return appPath === normalizedPath;
               });
               
               if (matchedApp && isValidIcon(matchedApp.icon)) {
-
                 // 将应用列表中的图标也保存到 extractedFileIconsRef，避免重复检查
                 extractedFileIconsRef.current.set(file.path, matchedApp.icon!);
                 return false;
@@ -4513,7 +4256,9 @@ export function LauncherWindow() {
       // 注意：只对实际文件路径（.exe, .lnk）更新，UWP 应用路径（shell:AppsFolder, ms-settings:）跳过
       if (result.type === "app" && result.path) {
         const isRealFilePath = pathLower.endsWith('.exe') || pathLower.endsWith('.lnk');
-        if (isRealFilePath) {
+        // 跳过 Recent 文件夹中的临时快捷方式（这些文件经常被删除）
+        const isRecentFolder = pathLower.includes('\\recent\\') || pathLower.includes('/recent/');
+        if (isRealFilePath && !isRecentFolder) {
           try {
             // 立即更新前端文件历史缓存（乐观更新）
             // 使用与后端一致的路径规范化：去掉末尾斜杠，保持原始格式
@@ -4593,6 +4338,8 @@ export function LauncherWindow() {
           } catch (error) {
             console.warn(`[应用打开] ✗ 更新 file_history 异常: ${result.path}`, error);
           }
+        } else if (isRecentFolder) {
+          console.log(`[应用打开] 跳过 file_history 更新（Recent 文件夹临时快捷方式）: ${result.path}`);
         } else {
           console.log(`[应用打开] 跳过 file_history 更新（UWP 应用路径）: ${result.path}`);
         }
@@ -4692,19 +4439,101 @@ export function LauncherWindow() {
             errorMsg.includes("应用程序未找到")
           ) {
             try {
-              // 自动删除无效的索引
-              await tauriApi.removeAppFromIndex(result.app.path);
-              // 从本地状态中移除已删除的应用
-              setApps((prevApps) => prevApps.filter((app) => app.path !== result.app!.path));
-              setFilteredApps((prevFiltered) => prevFiltered.filter((app) => app.path !== result.app!.path));
-              // 刷新搜索结果
-              if (query.trim()) {
-                await searchApplications(query);
-              } else {
-                await loadApplications();
-              }
-              // 显示提示信息
+              const pathToRemove = result.app.path;
+              
+              console.log(`[删除应用] ========== 开始删除流程 ==========`);
+              console.log(`[删除应用] 要删除的路径: ${pathToRemove}`);
+              
+              // 并行执行删除操作（应用索引 + 文件历史）
+              await Promise.all([
+                tauriApi.removeAppFromIndex(pathToRemove),
+                tauriApi.deleteFileHistory(pathToRemove).catch(() => {
+                  // file_history 中可能不存在该记录，忽略错误
+                  console.log(`[清理] file_history 中没有该路径记录: ${pathToRemove}`);
+                }),
+              ]);
+              
+              console.log(`[删除应用] 后端删除完成`);
+              
+              // 规范化路径用于比较（Windows 路径不区分大小写，统一反斜杠）
+              const normalizedPathToRemove = pathToRemove.toLowerCase().replace(/\//g, '\\');
+              console.log(`[删除应用] 规范化后的路径: ${normalizedPathToRemove}`);
+              
+              // 立即从本地状态和显示结果中移除已删除的应用（使用规范化比较）
+              setApps((prevApps) => {
+                console.log(`[删除应用] setApps 被调用，当前 apps 数量: ${prevApps.length}`);
+                const filtered = prevApps.filter((app) => {
+                  const normalizedAppPath = app.path.toLowerCase().replace(/\//g, '\\');
+                  const shouldKeep = normalizedAppPath !== normalizedPathToRemove;
+                  if (!shouldKeep) {
+                    console.log(`[删除应用] 从 apps 中找到并删除: ${app.path}`);
+                  }
+                  return shouldKeep;
+                });
+                console.log(`[删除应用] setApps 过滤后数量: ${filtered.length}`);
+                return filtered;
+              });
+              
+              setFilteredApps((prevFiltered) => {
+                console.log(`[删除应用] setFilteredApps 被调用，当前 filteredApps 数量: ${prevFiltered.length}`);
+                console.log(`[删除应用] 当前 filteredApps 内容:`, prevFiltered.map(a => `${a.name} (${a.path})`));
+                
+                const filtered = prevFiltered.filter((app) => {
+                  const normalizedAppPath = app.path.toLowerCase().replace(/\//g, '\\');
+                  const shouldKeep = normalizedAppPath !== normalizedPathToRemove;
+                  
+                  console.log(`[删除应用] 检查项: ${app.name}`);
+                  console.log(`[删除应用]   - 原始路径: ${app.path}`);
+                  console.log(`[删除应用]   - 规范化路径: ${normalizedAppPath}`);
+                  console.log(`[删除应用]   - 是否保留: ${shouldKeep}`);
+                  
+                  if (!shouldKeep) {
+                    console.log(`[删除应用] ✅ 从 filteredApps 中找到并删除: ${app.path}`);
+                  }
+                  return shouldKeep;
+                });
+                
+                console.log(`[删除应用] setFilteredApps 过滤后数量: ${filtered.length}`);
+                console.log(`[删除应用] 过滤后 filteredApps 内容:`, filtered.map(a => `${a.name} (${a.path})`));
+                return filtered;
+              });
+              
+              // ⭐ 关键修复：同时从 filteredFiles 中删除（文件历史中的 .lnk 文件）
+              setFilteredFiles((prevFiltered) => {
+                console.log(`[删除应用] setFilteredFiles 被调用，当前 filteredFiles 数量: ${prevFiltered.length}`);
+                
+                const filtered = prevFiltered.filter((file) => {
+                  const normalizedFilePath = file.path.toLowerCase().replace(/\//g, '\\');
+                  const shouldKeep = normalizedFilePath !== normalizedPathToRemove;
+                  
+                  if (!shouldKeep) {
+                    console.log(`[删除应用] ✅ 从 filteredFiles 中找到并删除: ${file.path}`);
+                  }
+                  return shouldKeep;
+                });
+                
+                console.log(`[删除应用] setFilteredFiles 过滤后数量: ${filtered.length}`);
+                return filtered;
+              });
+              
+              // 同时从文件历史缓存中移除（如果存在）
+              const beforeCount = allFileHistoryCacheRef.current.length;
+              allFileHistoryCacheRef.current = allFileHistoryCacheRef.current.filter((item) => {
+                const normalizedItemPath = item.path.toLowerCase().replace(/\//g, '\\');
+                return normalizedItemPath !== normalizedPathToRemove;
+              });
+              const afterCount = allFileHistoryCacheRef.current.length;
+              console.log(`[删除应用] 文件历史缓存: ${beforeCount} -> ${afterCount}`);
+              
+              // 显示提示信息（立即显示，让用户看到立即的反馈）
               setErrorMessage(`${errorMsg}\n\n已自动删除该无效索引。`);
+              console.log(`[删除应用] ========== 删除流程完成，弹窗已显示 ==========`);
+              
+              // 注意：不需要后台刷新搜索，因为：
+              // 1. 我们已经手动从 filteredApps 中删除了该项（上面的 setFilteredApps）
+              // 2. 后端也已经删除了（通过 Promise.all 等待完成）
+              // 3. 下次用户主动搜索时会自动从后端获取最新数据
+              // 如果这里立即调用 searchApplications，可能会在 React 渲染之前覆盖我们的手动更新
             } catch (deleteError: any) {
               console.error("Failed to remove app from index:", deleteError);
               // 如果删除失败，仍然显示原始错误

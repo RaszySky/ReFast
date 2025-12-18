@@ -55,6 +55,8 @@ export function FileHistoryPanel({ indexStatus, skeuoSurface = "bg-white rounded
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [pendingDeleteCount, setPendingDeleteCount] = useState(0);
+  const [isSingleDeleteConfirmOpen, setIsSingleDeleteConfirmOpen] = useState(false);
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<FileHistoryItem | null>(null);
 
   const loadFileHistoryList = useCallback(async () => {
     try {
@@ -463,6 +465,41 @@ export function FileHistoryPanel({ indexStatus, skeuoSurface = "bg-white rounded
     setIsDeleteConfirmOpen(false);
   }, []);
 
+  const handleOpenSingleDeleteConfirm = useCallback((item: FileHistoryItem) => {
+    setPendingDeleteItem(item);
+    setIsSingleDeleteConfirmOpen(true);
+  }, []);
+
+  const handleConfirmSingleDelete = useCallback(async () => {
+    if (!pendingDeleteItem) return;
+    
+    try {
+      setIsDeletingHistory(true);
+      setHistoryMessage(null);
+      
+      await tauriApi.deleteFileHistory(pendingDeleteItem.path);
+      
+      setHistoryMessage(`已删除文件历史记录: ${pendingDeleteItem.name}`);
+      await loadFileHistoryList();
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (error: any) {
+      console.error("删除文件历史失败:", error);
+      setHistoryMessage(error?.message || "删除文件历史失败");
+    } finally {
+      setIsDeletingHistory(false);
+      setIsSingleDeleteConfirmOpen(false);
+      setPendingDeleteItem(null);
+      setTimeout(() => setHistoryMessage(null), 3000);
+    }
+  }, [pendingDeleteItem, loadFileHistoryList, onRefresh]);
+
+  const handleCancelSingleDelete = useCallback(() => {
+    setIsSingleDeleteConfirmOpen(false);
+    setPendingDeleteItem(null);
+  }, []);
+
   return (
     <>
       <div className={`p-4 ${skeuoSurface} md:col-span-2`}>
@@ -627,6 +664,14 @@ export function FileHistoryPanel({ indexStatus, skeuoSurface = "bg-white rounded
                       使用 {item.use_count} 次 · 最近 {formatTimestamp(item.last_used)}
                     </div>
                   </div>
+                  <button
+                    onClick={() => handleOpenSingleDeleteConfirm(item)}
+                    className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                    title="删除此记录"
+                    disabled={isDeletingHistory}
+                  >
+                    🗑️
+                  </button>
                 </div>
               ))}
             </div>
@@ -642,6 +687,16 @@ export function FileHistoryPanel({ indexStatus, skeuoSurface = "bg-white rounded
         cancelText="取消"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+        variant="danger"
+      />
+      <ConfirmDialog
+        isOpen={isSingleDeleteConfirmOpen}
+        title="确认删除"
+        message={pendingDeleteItem ? `确定要删除文件历史记录: ${pendingDeleteItem.name} 吗？` : "确定要删除这条文件历史记录吗？"}
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={handleConfirmSingleDelete}
+        onCancel={handleCancelSingleDelete}
         variant="danger"
       />
     </>

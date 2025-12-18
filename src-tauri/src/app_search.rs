@@ -1038,8 +1038,9 @@ pub mod windows {
         }
 
         // Skip WindowsApps directory - UWP apps should be scanned via Get-StartApps instead
+        // Skip Recent directory - contains temporary shortcuts that often get deleted
         let dir_str = dir.to_string_lossy().to_lowercase();
-        if dir_str.contains("windowsapps") {
+        if dir_str.contains("windowsapps") || dir_str.contains("\\recent") || dir_str.contains("/recent") {
             return Ok(());
         }
 
@@ -1059,9 +1060,9 @@ pub mod windows {
             };
             let path = entry.path();
 
-            // Skip files in WindowsApps directory
+            // Skip files in WindowsApps and Recent directories
             let path_str = path.to_string_lossy().to_lowercase();
-            if path_str.contains("windowsapps") {
+            if path_str.contains("windowsapps") || path_str.contains("\\recent\\") || path_str.contains("/recent/") {
                 continue;
             }
 
