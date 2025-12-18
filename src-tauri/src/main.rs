@@ -677,6 +677,8 @@ fn main() {
             show_json_formatter_window,
             show_translation_window,
             show_hex_converter_window,
+            show_color_picker_window,
+            pick_color_from_screen,
             show_file_toolbox_window,
             show_calculator_pad_window,
             show_everything_search_window,
@@ -708,6 +710,7 @@ fn main() {
             check_update,
             download_update,
             install_update,
+            quit_app,
             get_all_clipboard_items,
             add_clipboard_item,
             update_clipboard_item,
@@ -716,6 +719,8 @@ fn main() {
             clear_clipboard_history,
             search_clipboard_items,
             show_clipboard_window,
+            get_clipboard_image_data,
+            copy_image_to_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

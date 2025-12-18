@@ -7,6 +7,7 @@ interface ColorFormat {
   rgb: { r: number; g: number; b: number };
   hsl: { h: number; s: number; l: number };
   hsv: { h: number; s: number; v: number };
+  alpha: number; // 0-1
 }
 
 interface StoredColor {
@@ -21,6 +22,7 @@ export function ColorPickerWindow() {
     rgb: { r: 59, g: 130, b: 246 },
     hsl: { h: 217, s: 91, l: 60 },
     hsv: { h: 217, s: 76, v: 96 },
+    alpha: 1,
   });
   const [colorHistory, setColorHistory] = useState<StoredColor[]>([]);
   const [isPickingColor, setIsPickingColor] = useState(false);
@@ -151,14 +153,20 @@ export function ColorPickerWindow() {
   };
 
   // 更新颜色格式
-  const updateColorFormats = (hex: string) => {
+  const updateColorFormats = (hex: string, alpha?: number) => {
     const rgb = hexToRgb(hex);
     const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
     const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+    const newAlpha = alpha !== undefined ? alpha : colorFormat.alpha;
 
-    setColorFormat({ hex, rgb, hsl, hsv });
+    setColorFormat({ hex, rgb, hsl, hsv, alpha: newAlpha });
     setCurrentColor(hex);
     saveColorToHistory(hex);
+  };
+
+  // 更新透明度
+  const updateAlpha = (alpha: number) => {
+    setColorFormat({ ...colorFormat, alpha });
   };
 
   // 处理颜色输入变化
@@ -229,13 +237,13 @@ export function ColorPickerWindow() {
     };
   };
 
-  // 处理 HSL 输入
-  const handleHslChange = (channel: "h" | "s" | "l", value: number) => {
-    const newHsl = { ...colorFormat.hsl, [channel]: value };
-    const rgb = hslToRgb(newHsl.h, newHsl.s, newHsl.l);
-    const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
-    updateColorFormats(hex);
-  };
+  // 处理 HSL 输入 - 保留以便将来使用
+  // const handleHslChange = (channel: "h" | "s" | "l", value: number) => {
+  //   const newHsl = { ...colorFormat.hsl, [channel]: value };
+  //   const rgb = hslToRgb(newHsl.h, newHsl.s, newHsl.l);
+  //   const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+  //   updateColorFormats(hex);
+  // };
 
   // 屏幕取色
   const handlePickFromScreen = async () => {
@@ -272,23 +280,31 @@ export function ColorPickerWindow() {
     switch (type) {
       case "complementary":
         colors.push(currentColor);
-        colors.push(rgbToHex(...Object.values(hslToRgb((h + 180) % 360, s, l))));
+        const comp = hslToRgb((h + 180) % 360, s, l);
+        colors.push(rgbToHex(comp.r, comp.g, comp.b));
         break;
       case "analogous":
-        colors.push(rgbToHex(...Object.values(hslToRgb((h - 30 + 360) % 360, s, l))));
+        const anal1 = hslToRgb((h - 30 + 360) % 360, s, l);
+        colors.push(rgbToHex(anal1.r, anal1.g, anal1.b));
         colors.push(currentColor);
-        colors.push(rgbToHex(...Object.values(hslToRgb((h + 30) % 360, s, l))));
+        const anal2 = hslToRgb((h + 30) % 360, s, l);
+        colors.push(rgbToHex(anal2.r, anal2.g, anal2.b));
         break;
       case "triadic":
         colors.push(currentColor);
-        colors.push(rgbToHex(...Object.values(hslToRgb((h + 120) % 360, s, l))));
-        colors.push(rgbToHex(...Object.values(hslToRgb((h + 240) % 360, s, l))));
+        const tri1 = hslToRgb((h + 120) % 360, s, l);
+        colors.push(rgbToHex(tri1.r, tri1.g, tri1.b));
+        const tri2 = hslToRgb((h + 240) % 360, s, l);
+        colors.push(rgbToHex(tri2.r, tri2.g, tri2.b));
         break;
       case "tetradic":
         colors.push(currentColor);
-        colors.push(rgbToHex(...Object.values(hslToRgb((h + 90) % 360, s, l))));
-        colors.push(rgbToHex(...Object.values(hslToRgb((h + 180) % 360, s, l))));
-        colors.push(rgbToHex(...Object.values(hslToRgb((h + 270) % 360, s, l))));
+        const tet1 = hslToRgb((h + 90) % 360, s, l);
+        colors.push(rgbToHex(tet1.r, tet1.g, tet1.b));
+        const tet2 = hslToRgb((h + 180) % 360, s, l);
+        colors.push(rgbToHex(tet2.r, tet2.g, tet2.b));
+        const tet3 = hslToRgb((h + 270) % 360, s, l);
+        colors.push(rgbToHex(tet3.r, tet3.g, tet3.b));
         break;
     }
 
@@ -329,10 +345,19 @@ export function ColorPickerWindow() {
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
                 当前颜色
               </h3>
-              <div
-                className="w-full h-48 rounded-lg shadow-inner border-4 border-white dark:border-gray-700 transition-colors"
-                style={{ backgroundColor: currentColor }}
-              />
+              <div 
+                className="w-full h-48 rounded-lg shadow-inner border-4 border-white dark:border-gray-700 transition-colors relative overflow-hidden"
+                style={{
+                  background: 'repeating-conic-gradient(#80808040 0% 25%, transparent 0% 50%) 50% / 20px 20px'
+                }}
+              >
+                <div 
+                  className="absolute inset-0"
+                  style={{ 
+                    backgroundColor: `rgba(${colorFormat.rgb.r}, ${colorFormat.rgb.g}, ${colorFormat.rgb.b}, ${colorFormat.alpha})`
+                  }}
+                />
+              </div>
               <div className="mt-4 flex gap-2">
                 <input
                   type="color"
@@ -436,6 +461,116 @@ export function ColorPickerWindow() {
                     {copiedFormat === "hsv" ? "✓ 已复制" : "复制"}
                   </button>
                 </div>
+
+                {/* RGBA */}
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">RGBA</div>
+                    <div className="font-mono text-sm text-gray-900 dark:text-gray-100">
+                      rgba({colorFormat.rgb.r}, {colorFormat.rgb.g}, {colorFormat.rgb.b}, {colorFormat.alpha.toFixed(2)})
+                    </div>
+                  </div>
+                  <button
+                    onClick={() =>
+                      copyToClipboard(
+                        `rgba(${colorFormat.rgb.r}, ${colorFormat.rgb.g}, ${colorFormat.rgb.b}, ${colorFormat.alpha.toFixed(2)})`,
+                        "rgba"
+                      )
+                    }
+                    className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                  >
+                    {copiedFormat === "rgba" ? "✓ 已复制" : "复制"}
+                  </button>
+                </div>
+
+                {/* HSLA */}
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">HSLA</div>
+                    <div className="font-mono text-sm text-gray-900 dark:text-gray-100">
+                      hsla({colorFormat.hsl.h}°, {colorFormat.hsl.s}%, {colorFormat.hsl.l}%, {colorFormat.alpha.toFixed(2)})
+                    </div>
+                  </div>
+                  <button
+                    onClick={() =>
+                      copyToClipboard(
+                        `hsla(${colorFormat.hsl.h}, ${colorFormat.hsl.s}%, ${colorFormat.hsl.l}%, ${colorFormat.alpha.toFixed(2)})`,
+                        "hsla"
+                      )
+                    }
+                    className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                  >
+                    {copiedFormat === "hsla" ? "✓ 已复制" : "复制"}
+                  </button>
+                </div>
+
+                {/* HEX with Alpha */}
+                {colorFormat.alpha < 1 && (
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">HEX (8位含透明度)</div>
+                      <div className="font-mono text-sm text-gray-900 dark:text-gray-100">
+                        {colorFormat.hex}{Math.round(colorFormat.alpha * 255).toString(16).padStart(2, '0').toUpperCase()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() =>
+                        copyToClipboard(
+                          `${colorFormat.hex}${Math.round(colorFormat.alpha * 255).toString(16).padStart(2, '0').toUpperCase()}`,
+                          "hexa"
+                        )
+                      }
+                      className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                    >
+                      {copiedFormat === "hexa" ? "✓ 已复制" : "复制"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 透明度滑块 */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
+              透明度 (Alpha)
+            </h3>
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm text-gray-600 dark:text-gray-400">
+                      透明度
+                    </label>
+                    <span className="text-sm font-mono text-gray-900 dark:text-gray-100">
+                      {Math.round(colorFormat.alpha * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={colorFormat.alpha * 100}
+                    onChange={(e) => updateAlpha(parseInt(e.target.value) / 100)}
+                    className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                <div 
+                  className="w-16 h-16 rounded-lg border-2 border-gray-300 dark:border-gray-600 relative overflow-hidden"
+                  style={{
+                    background: 'repeating-conic-gradient(#80808040 0% 25%, transparent 0% 50%) 50% / 10px 10px'
+                  }}
+                >
+                  <div 
+                    className="absolute inset-0"
+                    style={{ 
+                      backgroundColor: `rgba(${colorFormat.rgb.r}, ${colorFormat.rgb.g}, ${colorFormat.rgb.b}, ${colorFormat.alpha})`
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                💡 提示: 屏幕取色只能获取 RGB 值，透明度需手动调节。棋盘格背景用于预览透明效果。
               </div>
             </div>
           </div>

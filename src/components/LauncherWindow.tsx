@@ -7,7 +7,7 @@ import { trackEvent } from "../api/events";
 import type { AppInfo, FileHistoryItem, EverythingResult, MemoItem, PluginContext, UpdateCheckResult } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/window";
-import { listen, emit } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { plugins, searchPlugins, executePlugin } from "../plugins";
 import { AppCenterContent } from "./AppCenterContent";
 import { MemoModal } from "./MemoModal";

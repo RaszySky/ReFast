@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { tauriApi } from "../api/tauri";
 import type { UpdateCheckResult, DownloadProgress } from "../types";
 
@@ -108,19 +109,37 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps) {
       // 调用后端下载
       const filePath = await tauriApi.downloadUpdate(updateInfo.download_url);
       
-      // 下载完成，询问用户是否立即安装
-      const userChoice = window.confirm(
-        `下载完成！\n文件保存在：${filePath}\n\n是否立即安装更新？\n\n点击"确定"将启动安装程序并关闭当前应用。\n点击"取消"可稍后手动安装。`
+      // 下载完成，使用 Tauri 原生对话框询问用户是否立即安装
+      const userChoice = await confirm(
+        `是否立即安装更新？\n\n点击"是"将启动安装程序并关闭当前应用。\n点击"否"可稍后手动安装。`,
+        {
+          title: "下载完成",
+          kind: "info",
+          okLabel: "立即安装",
+          cancelLabel: "稍后安装",
+        }
       );
       
       if (userChoice) {
-        // 用户选择立即安装
+        // 用户确认后才执行安装
         try {
+          // 先启动安装程序
           await tauriApi.installUpdate(filePath);
-          // 应用将自动退出，这里的代码可能不会执行
+          
+          // 显示提示信息
+          await message("安装程序已启动，应用即将退出。", {
+            title: "提示",
+            kind: "info",
+          });
+          
+          // 退出应用
+          await tauriApi.quitApp();
         } catch (error) {
           console.error("启动安装程序失败:", error);
-          alert(`启动安装程序失败: ${error}\n\n已为您打开文件所在目录，请手动运行安装程序。`);
+          await message(`启动安装程序失败: ${error}\n\n已为您打开文件所在目录，请手动运行安装程序。`, {
+            title: "错误",
+            kind: "error",
+          });
           await tauriApi.revealInFolder(filePath);
         }
       } else {

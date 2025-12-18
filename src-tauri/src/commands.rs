@@ -6024,10 +6024,9 @@ pub async fn download_update(
     Ok(file_path.to_string_lossy().to_string())
 }
 
-/// 安装更新（启动安装程序并退出应用）
+/// 安装更新（启动安装程序）- 不自动退出应用
 #[tauri::command]
-pub async fn install_update(
-    app_handle: tauri::AppHandle,
+pub fn install_update(
     installer_path: String,
 ) -> Result<(), String> {
     use std::path::Path;
@@ -6084,10 +6083,13 @@ pub async fn install_update(
         }
     }
     
-    // 延迟 1 秒后退出应用，给安装程序启动的时间
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    Ok(())
+}
+
+/// 退出应用（用于安装更新后）
+#[tauri::command]
+pub fn quit_app(app_handle: tauri::AppHandle) -> Result<(), String> {
     app_handle.exit(0);
-    
     Ok(())
 }
 
@@ -6353,12 +6355,12 @@ pub async fn copy_image_to_clipboard(image_path: String) -> Result<(), String> {
 
             // 分配全局内存
             let h_mem = GlobalAlloc(GMEM_MOVEABLE, total_size);
-            if h_mem == 0 {
+            if h_mem.is_null() {
                 CloseClipboard();
                 return Err("Failed to allocate memory".to_string());
             }
 
-            let p_mem = GlobalLock(h_mem as *mut std::ffi::c_void);
+            let p_mem = GlobalLock(h_mem);
             if p_mem.is_null() {
                 CloseClipboard();
                 return Err("Failed to lock memory".to_string());
@@ -6393,10 +6395,10 @@ pub async fn copy_image_to_clipboard(image_path: String) -> Result<(), String> {
                 }
             }
 
-            GlobalUnlock(h_mem as *mut std::ffi::c_void);
+            GlobalUnlock(h_mem);
 
-            // 设置到剪切板
-            if SetClipboardData(8, h_mem) == 0 {
+            // 设置到剪切板 (CF_DIB = 8)
+            if SetClipboardData(8, h_mem as isize) == 0 {
                 CloseClipboard();
                 return Err("Failed to set clipboard data".to_string());
             }

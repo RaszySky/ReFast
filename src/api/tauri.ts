@@ -586,6 +586,11 @@ export const tauriApi = {
     return invoke("install_update", { installerPath });
   },
 
+  // Quit app API
+  async quitApp(): Promise<void> {
+    return invoke("quit_app");
+  },
+
   // Clipboard APIs
   async getAllClipboardItems(): Promise<ClipboardItem[]> {
     return invoke("get_all_clipboard_items");
@@ -617,6 +622,14 @@ export const tauriApi = {
 
   async showClipboardWindow(): Promise<void> {
     return invoke("show_clipboard_window");
+  },
+
+  async getClipboardImageData(imagePath: string): Promise<Uint8Array> {
+    return invoke("get_clipboard_image_data", { imagePath });
+  },
+
+  async copyImageToClipboard(imagePath: string): Promise<void> {
+    return invoke("copy_image_to_clipboard", { imagePath });
   },
 };
 
