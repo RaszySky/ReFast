@@ -936,6 +936,7 @@ pub mod windows {
         hwnd: Arc<Mutex<Option<HWND>>>,
         hook: Arc<Mutex<Option<windows_sys::Win32::UI::WindowsAndMessaging::HHOOK>>>,
         last_triggered: Arc<Mutex<Option<(String, std::time::Instant)>>>, // 防抖：记录上次触发的插件和时间
+        last_hotkey_triggered: Arc<Mutex<Option<(String, std::time::Instant)>>>, // 防抖：记录上次触发的快捷键组合和时间（用于防止同一快捷键重复触发）
     }
     
     static MULTI_HOTKEY_MANAGER: LazyLock<Arc<MultiHotkeyManager>> = LazyLock::new(|| {
@@ -945,6 +946,7 @@ pub mod windows {
             hwnd: Arc::new(Mutex::new(None)),
             hook: Arc::new(Mutex::new(None)),
             last_triggered: Arc::new(Mutex::new(None)),
+            last_hotkey_triggered: Arc::new(Mutex::new(None)),
         })
     });
     
@@ -1039,6 +1041,21 @@ pub mod windows {
         let hotkeys_guard = manager.hotkeys.lock().unwrap();
         let sender_guard = manager.sender.lock().unwrap();
         let mut last_triggered_guard = manager.last_triggered.lock().unwrap();
+        let mut last_hotkey_triggered_guard = manager.last_hotkey_triggered.lock().unwrap();
+        
+        // 构建当前快捷键的唯一标识（用于防抖）
+        let mut pressed_modifiers_sorted = modifiers.clone();
+        pressed_modifiers_sorted.sort();
+        let hotkey_signature = format!("{:?}:{}", pressed_modifiers_sorted, key_name);
+        
+        // 全局防抖：检查是否在 200ms 内重复触发同一个快捷键组合（无论插件ID）
+        let now = std::time::Instant::now();
+        if let Some((last_signature, last_time)) = last_hotkey_triggered_guard.as_ref() {
+            if last_signature == &hotkey_signature && now.duration_since(*last_time).as_millis() < 200 {
+                // 在 200ms 内重复触发相同的快捷键组合，忽略
+                return CallNextHookEx(windows_sys::Win32::UI::WindowsAndMessaging::HHOOK::default(), nCode, wParam, lParam);
+            }
+        }
         
         if let Some(ref sender) = *sender_guard {
             for (id, config) in hotkeys_guard.iter() {
@@ -1049,8 +1066,7 @@ pub mod windows {
                 pressed_modifiers.sort();
                 
                 if config_modifiers == pressed_modifiers && config.key == key_name {
-                    // 防抖：检查是否在 200ms 内重复触发同一个插件
-                    let now = std::time::Instant::now();
+                    // 插件级防抖：检查是否在 200ms 内重复触发同一个插件
                     if let Some((last_id, last_time)) = last_triggered_guard.as_ref() {
                         if last_id == id && now.duration_since(*last_time).as_millis() < 200 {
                             // 在 200ms 内重复触发，忽略
@@ -1060,6 +1076,8 @@ pub mod windows {
                     
                     // 记录触发时间和插件 ID
                     *last_triggered_guard = Some((id.clone(), now));
+                    // 记录触发时间和快捷键签名
+                    *last_hotkey_triggered_guard = Some((hotkey_signature.clone(), now));
                     
                     // 匹配！发送事件
                     let _ = sender.send(id.clone());
