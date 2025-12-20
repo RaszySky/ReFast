@@ -434,6 +434,54 @@ fn main() {
                 // 启动多快捷键监听器
                 match hotkey_handler::windows::start_multi_hotkey_listener(tx_plugin) {
                     Ok(_handle) => {
+                        // 定期更新启动器窗口的 HWND（当窗口显示时）
+                        let app_handle_launcher = app.handle().clone();
+                        std::thread::spawn(move || {
+                            use std::time::Duration;
+                            loop {
+                                std::thread::sleep(Duration::from_millis(500));
+                                
+                                // 检查启动器窗口是否可见
+                                if let Some(window) = app_handle_launcher.get_webview_window("launcher") {
+                                    if window.is_visible().unwrap_or(false) {
+                                        #[cfg(target_os = "windows")]
+                                        {
+                                            use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+                                            use windows_sys::Win32::Foundation::HWND;
+                                            use std::process;
+                                            
+                                            // 声明 GetWindowThreadProcessId（在 user32.dll 中，但 windows-sys 可能未导出）
+                                            extern "system" {
+                                                fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: *mut u32) -> u32;
+                                            }
+                                            
+                                            // 获取当前活动窗口
+                                            let foreground_hwnd = unsafe { GetForegroundWindow() };
+                                            if foreground_hwnd != 0 {
+                                                // 检查当前活动窗口是否属于我们的进程
+                                                let mut process_id: u32 = 0;
+                                                unsafe {
+                                                    GetWindowThreadProcessId(foreground_hwnd, &mut process_id);
+                                                }
+                                                
+                                                // 如果当前活动窗口属于我们的进程，且启动器窗口可见
+                                                // 则很可能是启动器窗口（因为启动器窗口通常会在显示时获得焦点）
+                                                if process_id == process::id() {
+                                                    hotkey_handler::windows::set_launcher_hwnd(foreground_hwnd);
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // 启动器窗口不可见时，清除 HWND
+                                        #[cfg(target_os = "windows")]
+                                        {
+                                            hotkey_handler::windows::set_launcher_hwnd(0);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        
                         // 在后台线程中监听插件和应用快捷键事件
                         let app_data_dir_hotkey = app_data_dir.clone();
                         std::thread::spawn(move || {

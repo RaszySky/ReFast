@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { tauriApi } from "../api/tauri";
 import type { WordRecord } from "../types";
+import { useEscapeKeyWithPriority } from "../hooks/useEscapeKeyWithPriority";
 
 // 翻译服务提供商
 type TranslationProvider = "baidu" | "sogou";
@@ -118,6 +119,16 @@ export function TranslationWindow() {
   const [wordRecords, setWordRecords] = useState<WordRecord[]>([]);
   const [wordSearchQuery, setWordSearchQuery] = useState("");
   const [isWordLoading, setIsWordLoading] = useState(false);
+  
+  // 编辑相关状态
+  const [editingRecord, setEditingRecord] = useState<WordRecord | null>(null);
+  const [editWord, setEditWord] = useState("");
+  const [editTranslation, setEditTranslation] = useState("");
+  const [editContext, setEditContext] = useState("");
+  const [editPhonetic, setEditPhonetic] = useState("");
+  const [editExampleSentence, setEditExampleSentence] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [editMasteryLevel, setEditMasteryLevel] = useState(0);
   
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -331,6 +342,67 @@ export function TranslationWindow() {
     };
   }, [wordSearchQuery, activeTab, handleWordSearch]);
 
+  const handleEditWord = useCallback((record: WordRecord) => {
+    setEditingRecord(record);
+    setEditWord(record.word);
+    setEditTranslation(record.translation);
+    setEditContext(record.context || "");
+    setEditPhonetic(record.phonetic || "");
+    setEditExampleSentence(record.exampleSentence || "");
+    setEditTags(record.tags.join(", "));
+    setEditMasteryLevel(record.masteryLevel);
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingRecord) return;
+
+    try {
+      const tagsArray = editTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+
+      const updated = await tauriApi.updateWordRecord(
+        editingRecord.id,
+        editWord.trim() || null,
+        editTranslation.trim() || null,
+        editContext.trim() || null,
+        editPhonetic.trim() || null,
+        editExampleSentence.trim() || null,
+        tagsArray.length > 0 ? tagsArray : null,
+        editMasteryLevel,
+        null,
+        null
+      );
+
+      setWordRecords((records) =>
+        records.map((r) => (r.id === updated.id ? updated : r))
+      );
+      setEditingRecord(null);
+      setEditWord("");
+      setEditTranslation("");
+      setEditContext("");
+      setEditPhonetic("");
+      setEditExampleSentence("");
+      setEditTags("");
+      setEditMasteryLevel(0);
+    } catch (error) {
+      console.error("Failed to update word record:", error);
+      alert("更新失败：" + (error instanceof Error ? error.message : String(error)));
+    }
+  }, [editingRecord, editWord, editTranslation, editContext, editPhonetic, editExampleSentence, editTags, editMasteryLevel]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingRecord(null);
+    setEditWord("");
+    setEditTranslation("");
+    setEditContext("");
+    setEditPhonetic("");
+    setEditExampleSentence("");
+    setEditTags("");
+    setEditMasteryLevel(0);
+  }, []);
+
   const handleDeleteWord = useCallback(async (id: string, word: string) => {
     const confirmed = await confirm(
       `确定要删除单词 "${word}" 吗？`,
@@ -376,22 +448,22 @@ export function TranslationWindow() {
     }
   }, [activeTab, loadWordRecords, wordSearchQuery]);
 
-  // ESC 键关闭窗口
-  useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === "Escape" || e.keyCode === 27) {
-        e.preventDefault();
-        e.stopPropagation();
-        const window = getCurrentWindow();
-        await window.close();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown, true);
-    };
+  // ESC 键关闭窗口或编辑对话框（带优先级）
+  const handleCloseWindow = useCallback(async () => {
+    const window = getCurrentWindow();
+    await window.close();
   }, []);
+
+  useEscapeKeyWithPriority([
+    {
+      condition: () => editingRecord !== null,
+      callback: handleCancelEdit,
+    },
+    {
+      condition: () => true, // 默认情况：关闭窗口
+      callback: handleCloseWindow,
+    },
+  ]);
 
 
   return (
@@ -766,13 +838,22 @@ export function TranslationWindow() {
                           <span>{formatDate(record.createdAt)}</span>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteWord(record.id, record.word)}
-                        className="ml-4 px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                        title="删除"
-                      >
-                        删除
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEditWord(record)}
+                          className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          title="编辑"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleDeleteWord(record.id, record.word)}
+                          className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                          title="删除"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -780,6 +861,133 @@ export function TranslationWindow() {
             )}
           </div>
         </>
+      )}
+
+      {/* 编辑单词对话框 */}
+      {editingRecord && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-[600px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-semibold mb-4">编辑单词</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  单词 *
+                </label>
+                <input
+                  type="text"
+                  value={editWord}
+                  onChange={(e) => setEditWord(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  翻译 *
+                </label>
+                <input
+                  type="text"
+                  value={editTranslation}
+                  onChange={(e) => setEditTranslation(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  音标
+                </label>
+                <input
+                  type="text"
+                  value={editPhonetic}
+                  onChange={(e) => setEditPhonetic(e.target.value)}
+                  placeholder="例如: [wɜːd]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  上下文
+                </label>
+                <textarea
+                  value={editContext}
+                  onChange={(e) => setEditContext(e.target.value)}
+                  placeholder="单词出现的上下文"
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  例句
+                </label>
+                <textarea
+                  value={editExampleSentence}
+                  onChange={(e) => setEditExampleSentence(e.target.value)}
+                  placeholder="例句"
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  标签（用逗号分隔）
+                </label>
+                <input
+                  type="text"
+                  value={editTags}
+                  onChange={(e) => setEditTags(e.target.value)}
+                  placeholder="例如: 常用, 动词, 商务"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  掌握程度: {editMasteryLevel}/5
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="5"
+                  value={editMasteryLevel}
+                  onChange={(e) => setEditMasteryLevel(parseInt(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>0</span>
+                  <span>1</span>
+                  <span>2</span>
+                  <span>3</span>
+                  <span>4</span>
+                  <span>5</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={handleCancelEdit}
+                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    handleCancelEdit();
+                  }
+                }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="px-4 py-2 text-sm bg-blue-500 text-white hover:bg-blue-600 rounded transition-colors"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    handleSaveEdit();
+                  }
+                }}
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 保存单词对话框 */}

@@ -935,6 +935,7 @@ pub mod windows {
         sender: Arc<Mutex<Option<mpsc::Sender<String>>>>,
         hwnd: Arc<Mutex<Option<HWND>>>,
         hook: Arc<Mutex<Option<windows_sys::Win32::UI::WindowsAndMessaging::HHOOK>>>,
+        launcher_hwnd: Arc<Mutex<Option<HWND>>>, // 启动器窗口的 HWND
         last_triggered: Arc<Mutex<Option<(String, std::time::Instant)>>>, // 防抖：记录上次触发的插件和时间
         last_hotkey_triggered: Arc<Mutex<Option<(String, std::time::Instant)>>>, // 防抖：记录上次触发的快捷键组合和时间（用于防止同一快捷键重复触发）
     }
@@ -945,10 +946,18 @@ pub mod windows {
             sender: Arc::new(Mutex::new(None)),
             hwnd: Arc::new(Mutex::new(None)),
             hook: Arc::new(Mutex::new(None)),
+            launcher_hwnd: Arc::new(Mutex::new(None)),
             last_triggered: Arc::new(Mutex::new(None)),
             last_hotkey_triggered: Arc::new(Mutex::new(None)),
         })
     });
+    
+    /// 设置启动器窗口的 HWND
+    pub fn set_launcher_hwnd(hwnd: HWND) {
+        let manager = MULTI_HOTKEY_MANAGER.clone();
+        let mut launcher_hwnd_guard = manager.launcher_hwnd.lock().unwrap();
+        *launcher_hwnd_guard = Some(hwnd);
+    }
     
     /// 设置全局 sender（在启动监听器时调用）
     pub fn set_global_sender(sender: mpsc::Sender<String>) {
@@ -960,6 +969,7 @@ pub mod windows {
     // 全局键盘钩子回调 - 检查所有已注册的快捷键
     unsafe extern "system" fn global_keyboard_hook_proc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
         use windows_sys::Win32::UI::WindowsAndMessaging::KBDLLHOOKSTRUCT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
         
         if nCode < 0 {
             return CallNextHookEx(windows_sys::Win32::UI::WindowsAndMessaging::HHOOK::default(), nCode, wParam, lParam);
@@ -971,6 +981,22 @@ pub mod windows {
         if !is_keydown {
             return CallNextHookEx(windows_sys::Win32::UI::WindowsAndMessaging::HHOOK::default(), nCode, wParam, lParam);
         }
+        
+        // 检查当前活动窗口是否是启动器窗口
+        // 如果是启动器窗口，允许事件正常传播，不拦截插件快捷键
+        let manager = MULTI_HOTKEY_MANAGER.clone();
+        let launcher_hwnd_guard = manager.launcher_hwnd.lock().unwrap();
+        if let Some(launcher_hwnd) = *launcher_hwnd_guard {
+            if launcher_hwnd != 0 {
+                let foreground_hwnd = GetForegroundWindow();
+                if foreground_hwnd == launcher_hwnd {
+                    // 当前活动窗口是启动器窗口，允许事件正常传播
+                    drop(launcher_hwnd_guard);
+                    return CallNextHookEx(windows_sys::Win32::UI::WindowsAndMessaging::HHOOK::default(), nCode, wParam, lParam);
+                }
+            }
+        }
+        drop(launcher_hwnd_guard);
         
         let hook_struct = &*(lParam as *const KBDLLHOOKSTRUCT);
         let vk_code = hook_struct.vkCode as u32;
