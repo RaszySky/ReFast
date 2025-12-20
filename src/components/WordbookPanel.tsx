@@ -12,7 +12,9 @@ interface WordbookPanelProps {
   onRefresh?: () => void;
   showAiExplanation?: boolean;
   onShowAiExplanationChange?: (show: boolean) => void;
-  onCloseAiExplanation?: () => void;
+  onCloseAiExplanation?: { current: (() => void) | null };
+  editingRecord?: WordRecord | null;
+  onEditingRecordChange?: (record: WordRecord | null) => void;
 }
 
 export function WordbookPanel({ 
@@ -21,14 +23,24 @@ export function WordbookPanel({
   showAiExplanation: externalShowAiExplanation,
   onShowAiExplanationChange,
   onCloseAiExplanation,
+  editingRecord: externalEditingRecord,
+  onEditingRecordChange,
 }: WordbookPanelProps) {
   // 单词本相关状态
   const [wordRecords, setWordRecords] = useState<WordRecord[]>([]);
   const [wordSearchQuery, setWordSearchQuery] = useState("");
   const [isWordLoading, setIsWordLoading] = useState(false);
   
-  // 编辑相关状态
-  const [editingRecord, setEditingRecord] = useState<WordRecord | null>(null);
+  // 编辑相关状态（如果父组件提供了状态，使用父组件的；否则使用本地状态）
+  const [internalEditingRecord, setInternalEditingRecord] = useState<WordRecord | null>(null);
+  const editingRecord = externalEditingRecord !== undefined ? externalEditingRecord : internalEditingRecord;
+  const setEditingRecord = useCallback((record: WordRecord | null) => {
+    if (onEditingRecordChange) {
+      onEditingRecordChange(record);
+    } else {
+      setInternalEditingRecord(record);
+    }
+  }, [onEditingRecordChange]);
   const [editWord, setEditWord] = useState("");
   const [editTranslation, setEditTranslation] = useState("");
   const [editContext, setEditContext] = useState("");
@@ -51,6 +63,8 @@ export function WordbookPanel({
   const [aiExplanationWord, setAiExplanationWord] = useState<WordRecord | null>(null);
   const [aiExplanationText, setAiExplanationText] = useState("");
   const [isAiExplanationLoading, setIsAiExplanationLoading] = useState(false);
+  const [aiQueryWord, setAiQueryWord] = useState<string>(""); // 用于AI查词的单词
+  const [hasAutoSaved, setHasAutoSaved] = useState(false); // 标记是否已自动保存
 
   // 单词本相关函数
   const loadWordRecords = useCallback(async () => {
@@ -180,19 +194,17 @@ export function WordbookPanel({
   const handleCloseAiExplanation = useCallback(() => {
     setShowAiExplanation(false);
     setAiExplanationWord(null);
+    setAiQueryWord("");
     setAiExplanationText("");
-    if (onCloseAiExplanation) {
-      onCloseAiExplanation();
-    }
-  }, [onCloseAiExplanation, setShowAiExplanation]);
+  }, [setShowAiExplanation]);
 
   // 将关闭函数暴露给父组件（用于ESC键处理）
   useEffect(() => {
     if (onCloseAiExplanation && showAiExplanation) {
       // 通过ref暴露关闭函数给父组件
-      (onCloseAiExplanation as any).current = handleCloseAiExplanation;
+      onCloseAiExplanation.current = handleCloseAiExplanation;
       return () => {
-        (onCloseAiExplanation as any).current = null;
+        onCloseAiExplanation.current = null;
       };
     }
   }, [showAiExplanation, handleCloseAiExplanation, onCloseAiExplanation]);
@@ -206,6 +218,7 @@ export function WordbookPanel({
 
     let accumulatedAnswer = '';
     let buffer = ''; // 用于处理不完整的行
+    let isFirstChunk = true; // 标记是否是第一个 chunk
 
     try {
       const baseUrl = ollamaSettings.base_url || 'http://localhost:11434';
@@ -266,6 +279,9 @@ export function WordbookPanel({
         // 立即开始读取，不等待
         while (true) {
           const { done, value } = await reader.read();
+          if (isFirstChunk && !done && value) {
+            isFirstChunk = false;
+          }
           if (done) {
             // 处理剩余的 buffer
             if (buffer.trim()) {
@@ -299,7 +315,7 @@ export function WordbookPanel({
             
             try {
               const data = JSON.parse(trimmedLine);
-              if (data.response) {
+              if (data.response && data.response.length > 0) {
                 accumulatedAnswer += data.response;
                 hasUpdate = true;
               }
@@ -342,6 +358,339 @@ export function WordbookPanel({
       // 立即开始读取，不等待
       while (true) {
         const { done, value } = await reader.read();
+        if (isFirstChunk && !done && value) {
+          isFirstChunk = false;
+        }
+        if (done) {
+          // 处理剩余的 buffer
+          if (buffer.trim()) {
+            try {
+              const data = JSON.parse(buffer);
+              if (data.message?.content) {
+                accumulatedAnswer += data.message.content;
+              }
+            } catch (e) {
+              console.warn('解析最后的数据失败:', e, buffer);
+            }
+          }
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        
+        // 保留最后一个不完整的行
+        buffer = lines.pop() || '';
+
+        // 快速处理所有完整的行，累积更新后一次性刷新
+        let hasUpdate = false;
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+          
+          try {
+            const data = JSON.parse(trimmedLine);
+            if (data.message?.content && data.message.content.length > 0) {
+              accumulatedAnswer += data.message.content;
+              hasUpdate = true;
+            }
+            if (data.done) {
+              flushSync(() => {
+                setIsAiExplanationLoading(false);
+                setAiExplanationText(accumulatedAnswer);
+              });
+              return;
+            }
+          } catch (e) {
+            // 忽略解析错误，继续处理下一行
+            console.warn('解析流式数据失败:', e, trimmedLine);
+          }
+        }
+        
+        // 如果有更新，立即更新UI（一次性更新，避免多次flushSync）
+        if (hasUpdate) {
+          flushSync(() => {
+            setAiExplanationText(accumulatedAnswer);
+          });
+        }
+      }
+      
+      // 流结束，确保最终状态更新
+      flushSync(() => {
+        setIsAiExplanationLoading(false);
+        setAiExplanationText(accumulatedAnswer);
+      });
+    } catch (error: any) {
+      console.error('AI解释失败:', error);
+      flushSync(() => {
+        setIsAiExplanationLoading(false);
+        setAiExplanationText(`获取AI解释失败: ${error.message || '未知错误'}\n\n请确保：\n1. Ollama服务正在运行\n2. 已安装并配置了正确的模型\n3. 设置中的Ollama配置正确`);
+      });
+    }
+  }, [ollamaSettings]);
+
+  // 从AI返回的文本中提取信息
+  const parseAiResponse = useCallback((text: string) => {
+    // 提取翻译（通常在第一个段落或"含义"部分）
+    let translation = "";
+    const translationMatch = text.match(/(?:含义|翻译|意思)[：:]\s*([^\n]+)/i) || 
+                           text.match(/(?:是|指|表示)[：:]\s*([^\n]+)/i) ||
+                           text.match(/^[^。！？\n]{5,50}[。！？]/);
+    if (translationMatch) {
+      translation = translationMatch[1]?.trim() || translationMatch[0]?.trim() || "";
+      // 清理markdown格式
+      translation = translation.replace(/\*\*/g, "").replace(/\*/g, "").replace(/`/g, "");
+      if (translation.length > 100) {
+        translation = translation.substring(0, 100) + "...";
+      }
+    }
+    if (!translation) {
+      // 如果没有找到明确的翻译，尝试提取第一段有意义的中文
+      const lines = text.split("\n").filter(line => line.trim());
+      for (const line of lines) {
+        const chineseMatch = line.match(/[\u4e00-\u9fa5]{3,}/);
+        if (chineseMatch && !line.includes("请") && !line.includes("提供")) {
+          translation = line.replace(/\*\*/g, "").replace(/\*/g, "").replace(/`/g, "").trim();
+          if (translation.length > 100) {
+            translation = translation.substring(0, 100) + "...";
+          }
+          break;
+        }
+      }
+    }
+    if (!translation) {
+      translation = "待完善";
+    }
+
+    // 提取音标
+    let phonetic = null;
+    const phoneticMatch = text.match(/\[([^\]]+)\]/) || text.match(/\/\/([^\/]+)\/\//);
+    if (phoneticMatch && phoneticMatch[1].length < 50) {
+      phonetic = phoneticMatch[1].trim();
+    }
+
+    // 提取例句（尝试找到第一个中英文对照的例句）
+    let exampleSentence = null;
+    const exampleMatch = text.match(/(?:例句|例子)[：:]\s*([^\n]+)/i) ||
+                        text.match(/([A-Z][^。！？\n]{10,100}[。！？])\s*[（(]?[\u4e00-\u9fa5]/);
+    if (exampleMatch) {
+      exampleSentence = exampleMatch[1]?.trim() || "";
+      if (exampleSentence.length > 200) {
+        exampleSentence = exampleSentence.substring(0, 200) + "...";
+      }
+    }
+
+    return { translation, phonetic, exampleSentence };
+  }, []);
+
+  // 自动保存单词到单词表
+  const autoSaveWord = useCallback(async (word: string, aiText: string) => {
+    try {
+      // 检查单词是否已存在
+      const existingRecords = await tauriApi.getAllWordRecords();
+      const exists = existingRecords.some(record => 
+        record.word.toLowerCase() === word.toLowerCase()
+      );
+
+      if (exists) {
+        console.log(`单词 "${word}" 已存在于单词表中，跳过自动保存`);
+        return;
+      }
+
+      // 解析AI返回的文本
+      const { translation, phonetic, exampleSentence } = parseAiResponse(aiText);
+
+      // 保存单词
+      await tauriApi.addWordRecord(
+        word,
+        translation,
+        "en", // 默认源语言为英语
+        "zh", // 默认目标语言为中文
+        aiText.length > 500 ? aiText.substring(0, 500) + "..." : aiText, // 将完整AI解释作为上下文
+        phonetic,
+        exampleSentence,
+        ["AI查词"] // 添加标签
+      );
+
+      // 刷新单词列表
+      await loadWordRecords();
+      setHasAutoSaved(true);
+      console.log(`单词 "${word}" 已自动保存到单词表`);
+    } catch (error) {
+      console.error("自动保存单词失败:", error);
+      // 不显示错误提示，静默失败
+    }
+  }, [parseAiResponse, loadWordRecords]);
+
+  // AI查词功能（流式请求）
+  const handleAiQuery = useCallback(async (word: string) => {
+    if (!word.trim()) {
+      alert("请输入要查询的单词");
+      return;
+    }
+
+    setAiQueryWord(word.trim());
+    setAiExplanationWord(null); // 清空之前的单词记录
+    setShowAiExplanation(true);
+    setAiExplanationText("");
+    setIsAiExplanationLoading(true);
+    setHasAutoSaved(false); // 重置自动保存标记
+
+    let accumulatedAnswer = '';
+    let buffer = ''; // 用于处理不完整的行
+    let isFirstChunk = true; // 标记是否是第一个 chunk
+
+    try {
+      const baseUrl = ollamaSettings.base_url || 'http://localhost:11434';
+      const model = ollamaSettings.model || 'llama2';
+      
+      const prompt = `请详细解释英语单词 "${word.trim()}"。请提供：
+1. 单词的详细含义和用法
+2. 词性（如果是动词，说明及物/不及物）
+3. 音标（如果知道）
+4. 常见搭配和短语
+5. 2-3个实用的例句（中英文对照）
+6. 记忆技巧或词根词缀分析（如果有）
+请用中文回答，内容要详细且实用。`;
+
+      // 尝试使用 chat API (流式)
+      const response = await fetch(`${baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        // 如果chat API失败，尝试使用generate API作为后备
+        const generateResponse = await fetch(`${baseUrl}/api/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model,
+            prompt: prompt,
+            stream: true,
+          }),
+        });
+
+        if (!generateResponse.ok) {
+          throw new Error(`Ollama API错误: ${generateResponse.statusText}`);
+        }
+
+        // 处理 generate API 的流式响应
+        const reader = generateResponse.body?.getReader();
+        const decoder = new TextDecoder();
+        
+        if (!reader) {
+          throw new Error('无法读取响应流');
+        }
+
+        // 立即开始读取，不等待
+        while (true) {
+          const { done, value } = await reader.read();
+          if (isFirstChunk && !done && value) {
+            isFirstChunk = false;
+          }
+          if (done) {
+            // 处理剩余的 buffer
+            if (buffer.trim()) {
+              try {
+                const data = JSON.parse(buffer);
+                if (data.response) {
+                  accumulatedAnswer += data.response;
+                  flushSync(() => {
+                    setAiExplanationText(accumulatedAnswer);
+                  });
+                }
+              } catch (e) {
+                console.warn('解析最后的数据失败:', e, buffer);
+              }
+            }
+            break;
+          }
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          const lines = buffer.split('\n');
+          
+          // 保留最后一个不完整的行
+          buffer = lines.pop() || '';
+
+          // 快速处理所有完整的行，累积更新后一次性刷新
+          let hasUpdate = false;
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
+            
+            try {
+              const data = JSON.parse(trimmedLine);
+              if (data.response) {
+                accumulatedAnswer += data.response;
+                hasUpdate = true;
+              }
+              if (data.done) {
+                flushSync(() => {
+                  setIsAiExplanationLoading(false);
+                  setAiExplanationText(accumulatedAnswer);
+                });
+                // AI查词完成，自动保存（generate API done）
+                if (accumulatedAnswer && !hasAutoSaved) {
+                  autoSaveWord(word.trim(), accumulatedAnswer);
+                }
+                return;
+              }
+            } catch (e) {
+              // 忽略解析错误，继续处理下一行
+              console.warn('解析流式数据失败:', e, trimmedLine);
+            }
+          }
+          
+          // 如果有更新，立即更新UI（一次性更新，避免多次flushSync）
+          if (hasUpdate) {
+            flushSync(() => {
+              setAiExplanationText(accumulatedAnswer);
+            });
+          }
+        }
+        
+        flushSync(() => {
+          setIsAiExplanationLoading(false);
+          setAiExplanationText(accumulatedAnswer);
+        });
+        // AI查词完成，自动保存（generate API流结束）
+        if (accumulatedAnswer && !hasAutoSaved) {
+          autoSaveWord(word.trim(), accumulatedAnswer);
+        }
+        return;
+      }
+
+      // 处理 chat API 的流式响应
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('无法读取响应流');
+      }
+
+      // 立即开始读取，不等待
+      while (true) {
+        const { done, value } = await reader.read();
+        if (isFirstChunk && !done && value) {
+          isFirstChunk = false;
+        }
         if (done) {
           // 处理剩余的 buffer
           if (buffer.trim()) {
@@ -381,6 +730,10 @@ export function WordbookPanel({
                 setIsAiExplanationLoading(false);
                 setAiExplanationText(accumulatedAnswer);
               });
+              // AI查词完成，自动保存（chat API done）
+              if (accumulatedAnswer && !hasAutoSaved) {
+                autoSaveWord(word.trim(), accumulatedAnswer);
+              }
               return;
             }
           } catch (e) {
@@ -402,15 +755,18 @@ export function WordbookPanel({
         setIsAiExplanationLoading(false);
         setAiExplanationText(accumulatedAnswer);
       });
+      // AI查词完成，自动保存（chat API流结束）
+      if (accumulatedAnswer && !hasAutoSaved) {
+        autoSaveWord(word.trim(), accumulatedAnswer);
+      }
     } catch (error: any) {
-      console.error('AI解释失败:', error);
+      console.error('AI查词失败:', error);
       flushSync(() => {
         setIsAiExplanationLoading(false);
-        setAiExplanationText(`获取AI解释失败: ${error.message || '未知错误'}\n\n请确保：\n1. Ollama服务正在运行\n2. 已安装并配置了正确的模型\n3. 设置中的Ollama配置正确`);
+        setAiExplanationText(`获取AI查词结果失败: ${error.message || '未知错误'}\n\n请确保：\n1. Ollama服务正在运行\n2. 已安装并配置了正确的模型\n3. 设置中的Ollama配置正确`);
       });
     }
-  }, [ollamaSettings]);
-
+  }, [ollamaSettings, setShowAiExplanation, autoSaveWord, hasAutoSaved]);
 
   // 暴露刷新函数给父组件
   useEffect(() => {
@@ -430,9 +786,23 @@ export function WordbookPanel({
             type="text"
             value={wordSearchQuery}
             onChange={(e) => setWordSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && wordSearchQuery.trim()) {
+                handleAiQuery(wordSearchQuery.trim());
+              }
+            }}
             placeholder="搜索单词或翻译..."
             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          {wordSearchQuery.trim() && (
+            <button
+              onClick={() => handleAiQuery(wordSearchQuery.trim())}
+              className="px-4 py-2 text-sm bg-purple-500 text-white hover:bg-purple-600 rounded-md transition-colors"
+              title="使用AI查询单词"
+            >
+              AI查词
+            </button>
+          )}
           {wordSearchQuery && (
             <button
               onClick={() => {
@@ -674,12 +1044,12 @@ export function WordbookPanel({
       )}
 
       {/* AI解释对话框 */}
-      {showAiExplanation && aiExplanationWord && (
+      {showAiExplanation && (aiExplanationWord || aiQueryWord) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 w-[700px] max-w-[90vw] max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">
-                AI解释: <span className="text-blue-600">{aiExplanationWord.word}</span>
+                {aiExplanationWord ? "AI解释" : "AI查词"}: <span className="text-blue-600">{aiExplanationWord?.word || aiQueryWord}</span>
               </h2>
               <button
                 onClick={handleCloseAiExplanation}

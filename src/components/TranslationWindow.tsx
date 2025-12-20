@@ -1,15 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tauriApi } from "../api/tauri";
 import { useEscapeKeyWithPriority } from "../hooks/useEscapeKeyWithPriority";
 import { TranslationPanel } from "./TranslationPanel";
 import { WordbookPanel } from "./WordbookPanel";
 import { useWindowClose } from "../hooks/useWindowClose";
+import type { WordRecord } from "../types";
 
 type TabType = "translation" | "wordbook";
 
+const TRANSLATION_TAB_STORAGE_KEY = "translation-window:last-tab";
+
 export function TranslationWindow() {
-  const [activeTab, setActiveTab] = useState<TabType>("translation");
+  // 从 localStorage 读取上次的标签页，默认为 "translation"
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const savedTab = localStorage.getItem(TRANSLATION_TAB_STORAGE_KEY);
+    // 验证保存的值是否有效
+    if (savedTab === "translation" || savedTab === "wordbook") {
+      return savedTab as TabType;
+    }
+    return "translation";
+  });
   const [sourceLang, setSourceLang] = useState("auto");
   const [targetLang, setTargetLang] = useState("en");
   
@@ -26,6 +36,9 @@ export function TranslationWindow() {
   // AI解释弹窗状态（提升到父组件，用于ESC键优先级处理）
   const [showAiExplanation, setShowAiExplanation] = useState(false);
   const aiExplanationCloseRef = useRef<{ current: (() => void) | null }>({ current: null });
+  
+  // 编辑单词对话框状态（提升到父组件，用于ESC键优先级处理）
+  const [editingRecord, setEditingRecord] = useState<WordRecord | null>(null);
   
   // 用于刷新单词本
   const wordbookRefreshRef = useRef<{ current: (() => void) | null }>({ current: null });
@@ -90,6 +103,11 @@ export function TranslationWindow() {
     loadSettings();
   }, []);
 
+  // 监听标签页切换，保存到 localStorage
+  useEffect(() => {
+    localStorage.setItem(TRANSLATION_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab]);
+
   // ESC 键关闭窗口或设置对话框（带优先级）
   const handleCloseWindow = useWindowClose();
 
@@ -103,6 +121,10 @@ export function TranslationWindow() {
           setShowAiExplanation(false);
         }
       },
+    },
+    {
+      condition: () => editingRecord !== null,
+      callback: () => setEditingRecord(null),
     },
     {
       condition: () => showTabOrderSettings,
@@ -174,6 +196,8 @@ export function TranslationWindow() {
           showAiExplanation={showAiExplanation}
           onShowAiExplanationChange={setShowAiExplanation}
           onCloseAiExplanation={aiExplanationCloseRef.current as any}
+          editingRecord={editingRecord}
+          onEditingRecordChange={setEditingRecord}
         />
       )}
 
