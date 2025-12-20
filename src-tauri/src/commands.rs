@@ -4760,32 +4760,6 @@ pub async fn show_translation_window(app: tauri::AppHandle) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn show_word_record_window(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
-
-    // 尝试获取现有窗口
-    if let Some(window) = app.get_webview_window("word-record-window") {
-        show_and_focus_window(&window)?;
-    } else {
-        // 动态创建窗口
-        let window = tauri::WebviewWindowBuilder::new(
-            &app,
-            "word-record-window",
-            tauri::WebviewUrl::App("index.html".into()),
-        )
-        .title("单词本")
-        .inner_size(800.0, 600.0)
-        .resizable(true)
-        .min_inner_size(600.0, 400.0)
-        .center()
-        .build()
-        .map_err(|e| format!("创建单词本窗口失败: {}", e))?;
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn show_hex_converter_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 

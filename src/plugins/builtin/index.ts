@@ -243,36 +243,6 @@ export function createBuiltinPlugins(): Plugin[] {
       },
     },
     {
-      id: "word_record",
-      name: "单词本",
-      description: "查看和管理保存的单词记录",
-      keywords: [
-        "单词本",
-        "danci",
-        "dc",
-        "word",
-        "words",
-        "vocabulary",
-        "单词",
-        "danci",
-        "dc",
-        "词汇",
-        "cihui",
-        "ch",
-        "记录",
-        "jilu",
-        "jl",
-      ],
-      execute: async (context) => {
-        // 打开独立的单词本窗口
-        if (context.tauriApi) {
-          await context.tauriApi.showWordRecordWindow();
-          // 关闭启动器
-          await context.hideLauncher();
-        }
-      },
-    },
-    {
       id: "hex_converter",
       name: "ASCII 十六进制转换器",
       description: "ASCII 文本与十六进制相互转换工具",

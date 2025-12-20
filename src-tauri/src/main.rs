@@ -703,7 +703,6 @@ fn main() {
             show_plugin_list_window,
             show_json_formatter_window,
             show_translation_window,
-            show_word_record_window,
             show_hex_converter_window,
             // show_color_picker_window,  // 暂时屏蔽，待优化
             // pick_color_from_screen,     // 暂时屏蔽，待优化
