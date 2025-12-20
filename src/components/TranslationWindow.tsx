@@ -139,9 +139,30 @@ export function TranslationWindow() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-50">
-      {/* 标题栏 */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 shadow-sm">
-        <h1 className="text-lg font-semibold text-gray-800">单词助手</h1>
+      {/* 标题栏 - 包含标签页切换和设置 */}
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 shadow-sm">
+        <div className="flex items-center gap-1">
+          {tabOrder.map((tab) => {
+            const tabConfig = {
+              translation: { label: "翻译工具", icon: null },
+              wordbook: { label: "单词助手", icon: null },
+            }[tab];
+            
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === tab
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+                }`}
+              >
+                {tabConfig.label}
+              </button>
+            );
+          })}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowTabOrderSettings(true)}
@@ -151,30 +172,6 @@ export function TranslationWindow() {
             ⚙️ 设置
           </button>
         </div>
-      </div>
-
-      {/* 标签页切换 */}
-      <div className="flex items-center gap-1 px-4 py-2 bg-white border-b border-gray-200">
-        {tabOrder.map((tab) => {
-          const tabConfig = {
-            translation: { label: "翻译工具", icon: null },
-            wordbook: { label: "单词助手", icon: null },
-          }[tab];
-          
-          return (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                activeTab === tab
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-              }`}
-            >
-              {tabConfig.label}
-            </button>
-          );
-        })}
       </div>
 
       {/* 翻译工具内容 */}
