@@ -75,6 +75,53 @@ const isValidIcon = (icon: string | null | undefined): boolean => {
   return icon !== null && icon !== undefined && icon.trim() !== '' && !isIconExtractionFailed(icon);
 };
 
+// 分批处理数组，避免阻塞UI线程
+// 使用 requestIdleCallback 或 setTimeout 在空闲时处理
+function processBatchAsync<T, R>(
+  items: T[],
+  processor: (item: T) => R | null,
+  batchSize: number = 50,
+  timeout: number = 1000
+): Promise<R[]> {
+  return new Promise((resolve) => {
+    const results: R[] = [];
+    let index = 0;
+
+    const processBatch = () => {
+      const end = Math.min(index + batchSize, items.length);
+      
+      // 处理当前批次
+      for (let i = index; i < end; i++) {
+        const result = processor(items[i]);
+        if (result !== null) {
+          results.push(result);
+        }
+      }
+      
+      index = end;
+
+      // 如果还有剩余项，继续处理
+      if (index < items.length) {
+        // 使用 requestIdleCallback 或 setTimeout 让出主线程
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(processBatch, { timeout });
+        } else {
+          setTimeout(processBatch, 0);
+        }
+      } else {
+        resolve(results);
+      }
+    };
+
+    // 开始处理
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(processBatch, { timeout });
+    } else {
+      setTimeout(processBatch, 0);
+    }
+  });
+}
+
 type SearchResult = {
   type: "app" | "file" | "everything" | "url" | "email" | "memo" | "plugin" | "history" | "ai" | "json_formatter" | "settings";
   app?: AppInfo;
@@ -191,6 +238,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
   const incrementalTimeoutRef = useRef<number | null>(null); // 用于取消增量加载的 setTimeout
   const lastSearchQueryRef = useRef<string>(""); // 用于去重，避免相同查询重复搜索
   const debounceTimeoutRef = useRef<number | null>(null); // 用于跟踪防抖定时器
+  const combinedResultsUpdateTimeoutRef = useRef<number | null>(null); // 用于防抖延迟更新 combinedResults
   const currentLoadResultsRef = useRef<SearchResult[]>([]); // 跟踪当前正在加载的结果，用于验证是否仍有效
   const horizontalResultsRef = useRef<SearchResult[]>([]); // 跟踪当前的横向结果，用于防止被覆盖
   const closeOnBlurRef = useRef(true);
@@ -1570,11 +1618,19 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       }
       
       // 简单策略：前端过滤本地 memos，如果需要更复杂的可以调用后端 search_memos
+      // 使用分批处理避免阻塞UI
       const lower = q.toLowerCase();
-      const filtered = memos.filter(
-        (m) =>
-          m.title.toLowerCase().includes(lower) ||
-          m.content.toLowerCase().includes(lower)
+      const filtered = await processBatchAsync(
+        memos,
+        (m) => {
+          if (m.title.toLowerCase().includes(lower) ||
+              m.content.toLowerCase().includes(lower)) {
+            return m;
+          }
+          return null;
+        },
+        50, // 每批处理50项
+        1000 // 超时时间1秒
       );
       
       // Only update if query hasn't changed
@@ -2659,6 +2715,30 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     return allResultsToSort;
   }, [filteredApps, filteredFiles, filteredMemos, filteredPlugins, everythingResults, detectedUrls, detectedEmails, detectedJson, openHistory, query, aiAnswer]);
 
+  // 防抖延迟更新 combinedResults，避免多个搜索结果异步返回时频繁重新排序
+  const [debouncedCombinedResults, setDebouncedCombinedResults] = useState<SearchResult[]>([]);
+  
+  useEffect(() => {
+    // 清除之前的定时器
+    if (combinedResultsUpdateTimeoutRef.current !== null) {
+      clearTimeout(combinedResultsUpdateTimeoutRef.current);
+      combinedResultsUpdateTimeoutRef.current = null;
+    }
+    
+    // 延迟更新，等待所有搜索结果返回（100ms 延迟）
+    // 这样可以避免多个搜索结果异步返回时频繁重新排序
+    combinedResultsUpdateTimeoutRef.current = setTimeout(() => {
+      setDebouncedCombinedResults(combinedResults);
+    }, 100) as unknown as number;
+    
+    return () => {
+      if (combinedResultsUpdateTimeoutRef.current !== null) {
+        clearTimeout(combinedResultsUpdateTimeoutRef.current);
+        combinedResultsUpdateTimeoutRef.current = null;
+      }
+    };
+  }, [combinedResults]);
+
   // 使用 ref 来跟踪当前的 query，避免闭包问题
   const queryRef = useRef(query);
   useEffect(() => {
@@ -2922,8 +3002,8 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       return;
     }
 
-    // 如果查询不为空但结果为空，可能是搜索还在进行中（防抖导致 combinedResults 尚未更新）
-    // 在这种情况下，清空旧结果，等待新的 combinedResults 更新
+    // 如果查询不为空但结果为空，可能是搜索还在进行中（防抖导致 debouncedCombinedResults 尚未更新）
+    // 在这种情况下，清空旧结果，等待新的 debouncedCombinedResults 更新
     if (queryRef.current.trim() !== "" && allResults.length === 0) {
       // 清空结果，避免显示旧查询的结果
       clearAllResults({
@@ -3117,7 +3197,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     }
     
     // 如果查询变化了，立即清空旧结果，避免显示错误的结果
-    // 这样可以确保在 combinedResults 更新之前，不会显示旧查询的结果
+    // 这样可以确保在 debouncedCombinedResults 更新之前，不会显示旧查询的结果
     if (query.trim() !== lastQueryInEffectRef.current.trim()) {
       clearAllResults({
         setResults,
@@ -3145,7 +3225,8 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       lastQueryInEffectRef.current = query;
     }
     // 使用分批加载来更新结果，避免一次性渲染大量DOM导致卡顿
-    loadResultsIncrementally(combinedResults);
+    // 使用防抖后的结果，避免多个搜索结果异步返回时频繁重新排序
+    loadResultsIncrementally(debouncedCombinedResults);
     
     // 清理函数：取消增量加载
     return () => {
@@ -3159,7 +3240,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       }
       currentLoadResultsRef.current = [];
     };
-  }, [combinedResults, query]);
+  }, [debouncedCombinedResults, query]);
 
   // Watch results changes and set selectedIndex to first horizontal result
   useEffect(() => {
@@ -3280,7 +3361,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     }, delay);
     
     return () => clearTimeout(timeoutId);
-  }, [combinedResults, isMemoModalOpen]);
+  }, [debouncedCombinedResults, isMemoModalOpen]);
 
     // Adjust window size when results actually change
     useEffect(() => {
@@ -3703,7 +3784,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     }
   }, []);
 
-  // 搜索系统文件夹（前端搜索，避免每次调用后端）
+  // 搜索系统文件夹（前端搜索，避免每次调用后端）- 异步分批处理，避免阻塞UI
   const searchSystemFolders = async (searchQuery: string) => {
     try {
       if (!searchQuery || searchQuery.trim() === "") {
@@ -3718,45 +3799,51 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         systemFoldersListLoadedRef.current = true;
       }
       
-      // 前端搜索（支持拼音匹配）
+      // 前端搜索（支持拼音匹配）- 使用分批处理避免阻塞UI
       const queryLower = searchQuery.trim().toLowerCase();
       const queryIsPinyin = !containsChinese(queryLower);
       
-      const results = systemFoldersListRef.current.filter((folder) => {
-        const nameLower = folder.name.toLowerCase();
-        const displayLower = folder.display_name.toLowerCase();
-        const pathLower = folder.path.toLowerCase();
-        
-        // 直接文本匹配
-        if (nameLower.includes(queryLower) || 
-            displayLower.includes(queryLower) || 
-            pathLower.includes(queryLower)) {
-          return true;
-        }
-        
-        // 拼音匹配（如果查询是拼音，且文件夹有拼音字段）
-        if (queryIsPinyin && (folder.name_pinyin || folder.name_pinyin_initials)) {
-          // 拼音全拼匹配
-          if (folder.name_pinyin) {
-            if (folder.name_pinyin === queryLower ||
-                folder.name_pinyin.startsWith(queryLower) ||
-                folder.name_pinyin.includes(queryLower)) {
-              return true;
+      // 使用分批处理过滤，避免阻塞UI
+      const results = await processBatchAsync(
+        systemFoldersListRef.current,
+        (folder) => {
+          const nameLower = folder.name.toLowerCase();
+          const displayLower = folder.display_name.toLowerCase();
+          const pathLower = folder.path.toLowerCase();
+          
+          // 直接文本匹配
+          if (nameLower.includes(queryLower) || 
+              displayLower.includes(queryLower) || 
+              pathLower.includes(queryLower)) {
+            return folder;
+          }
+          
+          // 拼音匹配（如果查询是拼音，且文件夹有拼音字段）
+          if (queryIsPinyin && (folder.name_pinyin || folder.name_pinyin_initials)) {
+            // 拼音全拼匹配
+            if (folder.name_pinyin) {
+              if (folder.name_pinyin === queryLower ||
+                  folder.name_pinyin.startsWith(queryLower) ||
+                  folder.name_pinyin.includes(queryLower)) {
+                return folder;
+              }
+            }
+            
+            // 拼音首字母匹配
+            if (folder.name_pinyin_initials) {
+              if (folder.name_pinyin_initials === queryLower ||
+                  folder.name_pinyin_initials.startsWith(queryLower) ||
+                  folder.name_pinyin_initials.includes(queryLower)) {
+                return folder;
+              }
             }
           }
           
-          // 拼音首字母匹配
-          if (folder.name_pinyin_initials) {
-            if (folder.name_pinyin_initials === queryLower ||
-                folder.name_pinyin_initials.startsWith(queryLower) ||
-                folder.name_pinyin_initials.includes(queryLower)) {
-              return true;
-            }
-          }
-        }
-        
-        return false;
-      });
+          return null;
+        },
+        50, // 每批处理50项
+        1000 // 超时时间1秒
+      );
       
       if (query.trim() === searchQuery.trim()) {
         setSystemFolders(results);
@@ -3851,52 +3938,73 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     }
   }, []);
 
-  // 前端搜索文件历史（基于缓存的文件历史列表）
-  const searchFileHistoryFrontend = (query: string, fileHistory: FileHistoryItem[]): FileHistoryItem[] => {
+  // 前端搜索文件历史（基于缓存的文件历史列表）- 异步分批处理，避免阻塞UI
+  const searchFileHistoryFrontend = async (query: string, fileHistory: FileHistoryItem[]): Promise<FileHistoryItem[]> => {
     if (!query || query.trim() === "") {
-      // 返回所有文件，按最后使用时间排序
-      const sorted = [...fileHistory].sort((a, b) => b.last_used - a.last_used);
-      return sorted.slice(0, 100); // 限制返回数量
+      // 返回所有文件，按最后使用时间排序（使用异步排序避免阻塞）
+      return new Promise((resolve) => {
+        const worker = () => {
+          const sorted = [...fileHistory].sort((a, b) => b.last_used - a.last_used);
+          resolve(sorted.slice(0, 100)); // 限制返回数量
+        };
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(worker, { timeout: 1000 });
+        } else {
+          setTimeout(worker, 0);
+        }
+      });
     }
 
     const queryLower = query.trim().toLowerCase();
 
-    const results: Array<{ item: FileHistoryItem; score: number }> = [];
+    // 使用分批处理搜索，避免阻塞UI
+    const scoredResults = await processBatchAsync<FileHistoryItem, { item: FileHistoryItem; score: number }>(
+      fileHistory,
+      (item) => {
+        const nameLower = item.name.toLowerCase();
+        const pathLower = item.path.toLowerCase();
+        let score = 0;
 
-    for (const item of fileHistory) {
-      const nameLower = item.name.toLowerCase();
-      const pathLower = item.path.toLowerCase();
-      let score = 0;
+        // 名称匹配（最高优先级）
+        if (nameLower === queryLower) {
+          score += 1000;
+        } else if (nameLower.startsWith(queryLower)) {
+          score += 500;
+        } else if (nameLower.includes(queryLower)) {
+          score += 100;
+        }
 
-      // 名称匹配（最高优先级）
-      if (nameLower === queryLower) {
-        score += 1000;
-      } else if (nameLower.startsWith(queryLower)) {
-        score += 500;
-      } else if (nameLower.includes(queryLower)) {
-        score += 100;
+        // 路径匹配（较低优先级）
+        if (score === 0 && pathLower.includes(queryLower)) {
+          score += 10;
+        }
+
+        return score > 0 ? { item, score } : null;
+      },
+      50, // 每批处理50项
+      1000 // 超时时间1秒
+    );
+
+    // 排序操作也异步执行
+    return new Promise((resolve) => {
+      const worker = () => {
+        // 按分数排序，然后按最后使用时间排序
+        scoredResults.sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
+          return b.item.last_used - a.item.last_used;
+        });
+
+        // 限制结果数量并返回
+        resolve(scoredResults.slice(0, 100).map((r) => r.item));
+      };
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(worker, { timeout: 1000 });
+      } else {
+        setTimeout(worker, 0);
       }
-
-      // 路径匹配（较低优先级）
-      if (score === 0 && pathLower.includes(queryLower)) {
-        score += 10;
-      }
-
-      if (score > 0) {
-        results.push({ item, score });
-      }
-    }
-
-    // 按分数排序，然后按最后使用时间排序
-    results.sort((a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-      return b.item.last_used - a.item.last_used;
     });
-
-    // 限制结果数量并返回
-    return results.slice(0, 100).map((r) => r.item);
   };
 
   const searchFileHistory = async (searchQuery: string) => {
@@ -3926,8 +4034,8 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         }
       }
 
-      // 使用前端搜索
-      const results = searchFileHistoryFrontend(searchQuery, allFileHistoryCacheRef.current);
+      // 使用前端搜索（异步分批处理）
+      const results = await searchFileHistoryFrontend(searchQuery, allFileHistoryCacheRef.current);
 
       // Only update if query hasn't changed
       const currentQueryTrimmed = query.trim();

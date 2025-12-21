@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+// 导入 mathjs 并配置高精度
 import { create, all } from "mathjs";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useWindowClose } from "../hooks/useWindowClose";
