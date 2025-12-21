@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { flushSync } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { tauriApi } from "../api/tauri";
 import type { WordRecord } from "../types";
@@ -310,13 +311,13 @@ export function WordbookPanel({
   }, [showAiExplanation, handleCloseAiExplanation, onCloseAiExplanation]);
 
   // AI解释功能（流式请求）
-  const handleAiExplanation = useCallback(async (record: WordRecord) => {
-    console.log(`[AI解释] 请求解释，单词: ${record.word}, 已有保存的解释: ${!!record.aiExplanation}`);
+  const handleAiExplanation = useCallback(async (record: WordRecord, forceRegenerate: boolean = false) => {
+    console.log(`[AI解释] 请求解释，单词: ${record.word}, 已有保存的解释: ${!!record.aiExplanation}, 强制重新生成: ${forceRegenerate}`);
     setAiExplanationWord(record);
     setShowAiExplanation(true);
     
-    // 如果已有保存的AI解释，直接显示
-    if (record.aiExplanation) {
+    // 如果已有保存的AI解释且不强制重新生成，直接显示
+    if (record.aiExplanation && !forceRegenerate) {
       console.log(`[AI解释] 使用已保存的解释，单词: ${record.word}, 解释长度: ${record.aiExplanation.length}`);
       setAiExplanationText(record.aiExplanation);
       setIsAiExplanationLoading(false);
@@ -663,6 +664,13 @@ export function WordbookPanel({
       });
     }
   }, [ollamaSettings]);
+
+  // 重新生成AI解释
+  const handleRegenerateExplanation = useCallback(() => {
+    if (aiExplanationWord) {
+      handleAiExplanation(aiExplanationWord, true);
+    }
+  }, [aiExplanationWord, handleAiExplanation]);
 
   // 从AI返回的文本中提取信息
   const parseAiResponse = useCallback((text: string) => {
@@ -1474,6 +1482,7 @@ export function WordbookPanel({
                     {aiExplanationText ? (
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
                         components={{
                           // 自定义样式
                           p: ({ children }: any) => <p className="mb-4 last:mb-0 text-gray-700 leading-relaxed">{children}</p>,
@@ -1507,6 +1516,7 @@ export function WordbookPanel({
                           hr: () => <hr className="my-5 border-gray-300" />,
                           strong: ({ children }: any) => <strong className="font-semibold text-gray-900">{children}</strong>,
                           em: ({ children }: any) => <em className="italic">{children}</em>,
+                          br: () => <br />,
                         }}
                       >
                         {aiExplanationText}
@@ -1518,13 +1528,27 @@ export function WordbookPanel({
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-3 pt-5 border-t border-gray-200">
-              <button
-                onClick={handleCloseAiExplanation}
-                className="px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-all border border-gray-200 hover:border-gray-300"
-              >
-                关闭
-              </button>
+            <div className="flex justify-between items-center pt-5 border-t border-gray-200">
+              {aiExplanationWord && aiExplanationText && !isAiExplanationLoading && (
+                <button
+                  onClick={handleRegenerateExplanation}
+                  className="px-5 py-2.5 text-sm font-semibold text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-xl transition-all border border-purple-200 hover:border-purple-300 flex items-center gap-2"
+                  title="重新生成AI解释"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  重新解释
+                </button>
+              )}
+              <div className="flex justify-end gap-3 ml-auto">
+                <button
+                  onClick={handleCloseAiExplanation}
+                  className="px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-all border border-gray-200 hover:border-gray-300"
+                >
+                  关闭
+                </button>
+              </div>
             </div>
           </div>
         </div>
