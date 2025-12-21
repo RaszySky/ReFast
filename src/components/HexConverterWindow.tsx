@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { useWindowClose } from "../hooks/useWindowClose";

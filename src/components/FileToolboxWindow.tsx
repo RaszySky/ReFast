@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, confirm, message } from "@tauri-apps/plugin-dialog";
 import { tauriApi } from "../api/tauri";

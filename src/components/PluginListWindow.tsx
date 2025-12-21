@@ -1,5 +1,3 @@
-import { useCallback } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { executePlugin } from "../plugins";
 import type { PluginContext } from "../types";
 import { tauriApi } from "../api/tauri";

@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useState, useEffect, useRef } from "react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { tauriApi } from "../api/tauri";
 import type { ClipboardItem } from "../types";

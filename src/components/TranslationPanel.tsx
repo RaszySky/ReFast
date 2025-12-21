@@ -250,15 +250,6 @@ export function TranslationPanel({
     }
   };
 
-  const handleSaveWord = () => {
-    if (!inputText.trim()) {
-      alert("请输入要翻译的单词");
-      return;
-    }
-    setSaveTranslation("");
-    setShowSaveDialog(true);
-  };
-
   const handleConfirmSave = async () => {
     if (!inputText.trim() || !saveTranslation.trim()) {
       alert("请输入单词和翻译");
