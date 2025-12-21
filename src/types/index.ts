@@ -165,6 +165,7 @@ export interface WordRecord {
   phonetic?: string | null;
   exampleSentence?: string | null;
   tags: string[];
+  aiExplanation?: string | null;
   masteryLevel: number;
   reviewCount: number;
   lastReviewed?: number | null;

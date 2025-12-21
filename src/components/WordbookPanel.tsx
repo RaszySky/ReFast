@@ -177,6 +177,7 @@ export function WordbookPanel({
         null,
         editExampleSentence.trim() || null,
         null,
+        null, // aiExplanation - 编辑时不修改
         editMasteryLevel,
         null,
         null
@@ -242,6 +243,7 @@ export function WordbookPanel({
         null,
         null,
         null,
+        null, // aiExplanation - 不修改
         newLevel,
         null,
         null
@@ -309,11 +311,27 @@ export function WordbookPanel({
 
   // AI解释功能（流式请求）
   const handleAiExplanation = useCallback(async (record: WordRecord) => {
+    console.log(`[AI解释] 请求解释，单词: ${record.word}, 已有保存的解释: ${!!record.aiExplanation}`);
     setAiExplanationWord(record);
     setShowAiExplanation(true);
+    
+    // 如果已有保存的AI解释，直接显示
+    if (record.aiExplanation) {
+      console.log(`[AI解释] 使用已保存的解释，单词: ${record.word}, 解释长度: ${record.aiExplanation.length}`);
+      setAiExplanationText(record.aiExplanation);
+      setIsAiExplanationLoading(false);
+      return;
+    }
+    
+    console.log(`[AI解释] 开始请求AI生成解释，单词: ${record.word}`);
+    
     setAiExplanationText("");
     setIsAiExplanationLoading(true);
 
+    // 保存 record 信息到局部变量，避免在异步回调中丢失
+    const wordId = record.id;
+    const wordText = record.word;
+    
     let accumulatedAnswer = '';
     let buffer = ''; // 用于处理不完整的行
     let isFirstChunk = true; // 标记是否是第一个 chunk
@@ -422,6 +440,45 @@ export function WordbookPanel({
                   setIsAiExplanationLoading(false);
                   setAiExplanationText(accumulatedAnswer);
                 });
+                // 保存AI解释到数据库
+                if (accumulatedAnswer && wordId) {
+                  console.log(`[AI解释] 开始保存解释到数据库，单词ID: ${wordId}, 单词: ${wordText}, 解释长度: ${accumulatedAnswer.length}`);
+                  try {
+                    const updated = await tauriApi.updateWordRecord(
+                      wordId,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      accumulatedAnswer,
+                      null,
+                      null,
+                      null
+                    );
+                    console.log(`[AI解释] 保存成功，单词: ${wordText}, 已保存的解释长度: ${updated.aiExplanation?.length || 0}`);
+                    // 更新本地记录
+                    setAllWordRecords((records) => {
+                      return records.map((r) => 
+                        r.id === wordId 
+                          ? { ...r, aiExplanation: accumulatedAnswer }
+                          : r
+                      );
+                    });
+                    setWordRecords((records) => {
+                      return records.map((r) => 
+                        r.id === wordId 
+                          ? { ...r, aiExplanation: accumulatedAnswer }
+                          : r
+                      );
+                    });
+                  } catch (error) {
+                    console.error(`[AI解释] 保存失败，单词: ${wordText}`, error);
+                  }
+                } else {
+                  console.warn(`[AI解释] 跳过保存 - accumulatedAnswer: ${!!accumulatedAnswer}, wordId: ${!!wordId}`);
+                }
                 return;
               }
             } catch (e) {
@@ -498,6 +555,45 @@ export function WordbookPanel({
                 setIsAiExplanationLoading(false);
                 setAiExplanationText(accumulatedAnswer);
               });
+              // 保存AI解释到数据库
+              if (accumulatedAnswer && wordId) {
+                console.log(`[AI解释] 开始保存解释到数据库，单词ID: ${wordId}, 单词: ${wordText}, 解释长度: ${accumulatedAnswer.length}`);
+                try {
+                  const updated = await tauriApi.updateWordRecord(
+                    wordId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    accumulatedAnswer,
+                    null,
+                    null,
+                    null
+                  );
+                  console.log(`[AI解释] 保存成功，单词: ${wordText}, 已保存的解释长度: ${updated.aiExplanation?.length || 0}`);
+                  // 更新本地记录
+                  setAllWordRecords((records) => {
+                    return records.map((r) => 
+                      r.id === wordId 
+                        ? { ...r, aiExplanation: accumulatedAnswer }
+                        : r
+                    );
+                  });
+                  setWordRecords((records) => {
+                    return records.map((r) => 
+                      r.id === wordId 
+                        ? { ...r, aiExplanation: accumulatedAnswer }
+                        : r
+                    );
+                  });
+                } catch (error) {
+                  console.error(`[AI解释] 保存失败，单词: ${wordText}`, error);
+                }
+              } else {
+                console.warn(`[AI解释] 跳过保存 - accumulatedAnswer: ${!!accumulatedAnswer}, wordId: ${!!wordId}`);
+              }
               return;
             }
           } catch (e) {
@@ -519,6 +615,46 @@ export function WordbookPanel({
         setIsAiExplanationLoading(false);
         setAiExplanationText(accumulatedAnswer);
       });
+      
+      // 保存AI解释到数据库
+      if (accumulatedAnswer && wordId) {
+        console.log(`[AI解释] 流结束，开始保存解释到数据库，单词ID: ${wordId}, 单词: ${wordText}, 解释长度: ${accumulatedAnswer.length}`);
+        try {
+          const updated = await tauriApi.updateWordRecord(
+            wordId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            accumulatedAnswer,
+            null,
+            null,
+            null
+          );
+          console.log(`[AI解释] 保存成功，单词: ${wordText}, 已保存的解释长度: ${updated.aiExplanation?.length || 0}`);
+          // 更新本地记录
+          setAllWordRecords((records) => {
+            return records.map((r) => 
+              r.id === wordId 
+                ? { ...r, aiExplanation: accumulatedAnswer }
+                : r
+            );
+          });
+          setWordRecords((records) => {
+            return records.map((r) => 
+              r.id === wordId 
+                ? { ...r, aiExplanation: accumulatedAnswer }
+                : r
+            );
+          });
+        } catch (error) {
+          console.error(`[AI解释] 保存失败，单词: ${wordText}`, error);
+        }
+      } else {
+        console.warn(`[AI解释] 流结束但跳过保存 - accumulatedAnswer: ${!!accumulatedAnswer}, wordId: ${!!wordId}`);
+      }
     } catch (error: any) {
       console.error('AI解释失败:', error);
       flushSync(() => {

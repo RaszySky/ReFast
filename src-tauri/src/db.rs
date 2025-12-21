@@ -173,6 +173,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             phonetic TEXT,
             example_sentence TEXT,
             tags TEXT,
+            ai_explanation TEXT,
             mastery_level INTEGER DEFAULT 0,
             review_count INTEGER DEFAULT 0,
             last_reviewed INTEGER,
@@ -185,9 +186,31 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS idx_word_records_created_at ON word_records(created_at);
         CREATE INDEX IF NOT EXISTS idx_word_records_mastery_level ON word_records(mastery_level);
         CREATE INDEX IF NOT EXISTS idx_word_records_is_favorite ON word_records(is_favorite);
+        
+        -- Migration: Add ai_explanation column if it doesn't exist
+        -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN
+        -- We'll check and add it manually if needed
+        -- Note: This will fail silently if the column already exists, which is fine
+        -- We'll handle this gracefully by catching the error
+        -- For now, we'll add it in a separate migration step
     "#,
     )
     .map_err(|e| format!("Failed to run database migrations: {}", e))?;
+
+    // Migration: Add ai_explanation column if it doesn't exist
+    // Check if column exists by trying to select it
+    let column_exists = conn
+        .prepare("SELECT ai_explanation FROM word_records LIMIT 1")
+        .is_ok();
+    
+    if !column_exists {
+        // Column doesn't exist, add it
+        conn.execute(
+            "ALTER TABLE word_records ADD COLUMN ai_explanation TEXT",
+            [],
+        )
+        .map_err(|e| format!("Failed to add ai_explanation column: {}", e))?;
+    }
 
     Ok(())
 }

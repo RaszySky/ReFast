@@ -682,6 +682,7 @@ export const tauriApi = {
     phonetic?: string | null,
     exampleSentence?: string | null,
     tags?: string[] | null,
+    aiExplanation?: string | null,
     masteryLevel?: number | null,
     isFavorite?: boolean | null,
     isMastered?: boolean | null
@@ -694,6 +695,7 @@ export const tauriApi = {
       phonetic,
       exampleSentence,
       tags,
+      aiExplanation,
       masteryLevel,
       isFavorite,
       isMastered,

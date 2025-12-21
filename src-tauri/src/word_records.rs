@@ -16,6 +16,7 @@ pub struct WordRecord {
     pub phonetic: Option<String>,
     pub example_sentence: Option<String>,
     pub tags: Vec<String>,
+    pub ai_explanation: Option<String>,
     pub mastery_level: i32,
     pub review_count: i32,
     pub last_reviewed: Option<u64>,
@@ -38,7 +39,7 @@ pub fn get_all_word_records(app_data_dir: &Path) -> Result<Vec<WordRecord>, Stri
     let mut stmt = conn
         .prepare(
             "SELECT id, word, translation, source_lang, target_lang, context, phonetic, 
-                    example_sentence, tags, mastery_level, review_count, last_reviewed, 
+                    example_sentence, tags, ai_explanation, mastery_level, review_count, last_reviewed, 
                     created_at, updated_at, is_favorite, is_mastered 
              FROM word_records ORDER BY mastery_level ASC",
         )
@@ -63,13 +64,14 @@ pub fn get_all_word_records(app_data_dir: &Path) -> Result<Vec<WordRecord>, Stri
                 phonetic: row.get(6)?,
                 example_sentence: row.get(7)?,
                 tags,
-                mastery_level: row.get(9)?,
-                review_count: row.get(10)?,
-                last_reviewed: row.get::<_, Option<i64>>(11)?.map(|v| v as u64),
-                created_at: row.get::<_, i64>(12)? as u64,
-                updated_at: row.get::<_, i64>(13)? as u64,
-                is_favorite: row.get::<_, i32>(14)? != 0,
-                is_mastered: row.get::<_, i32>(15)? != 0,
+                ai_explanation: row.get(9)?,
+                mastery_level: row.get(10)?,
+                review_count: row.get(11)?,
+                last_reviewed: row.get::<_, Option<i64>>(12)?.map(|v| v as u64),
+                created_at: row.get::<_, i64>(13)? as u64,
+                updated_at: row.get::<_, i64>(14)? as u64,
+                is_favorite: row.get::<_, i32>(15)? != 0,
+                is_mastered: row.get::<_, i32>(16)? != 0,
             })
         })
         .map_err(|e| format!("Failed to iterate word_records: {}", e))?;
@@ -108,6 +110,7 @@ pub fn add_word_record(
         phonetic: phonetic.clone(),
         example_sentence: example_sentence.clone(),
         tags: tags.clone(),
+        ai_explanation: None,
         mastery_level: 0,
         review_count: 0,
         last_reviewed: None,
@@ -120,9 +123,9 @@ pub fn add_word_record(
     let mut conn = db::get_connection(app_data_dir)?;
     conn.execute(
         "INSERT INTO word_records (id, word, translation, source_lang, target_lang, context, 
-                                   phonetic, example_sentence, tags, mastery_level, review_count, 
+                                   phonetic, example_sentence, tags, ai_explanation, mastery_level, review_count, 
                                    last_reviewed, created_at, updated_at, is_favorite, is_mastered)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         params![
             item.id,
             item.word,
@@ -133,6 +136,7 @@ pub fn add_word_record(
             item.phonetic,
             item.example_sentence,
             tags_json,
+            item.ai_explanation,
             item.mastery_level,
             item.review_count,
             item.last_reviewed.map(|v| v as i64),
@@ -155,6 +159,7 @@ pub fn update_word_record(
     phonetic: Option<String>,
     example_sentence: Option<String>,
     tags: Option<Vec<String>>,
+    ai_explanation: Option<String>,
     mastery_level: Option<i32>,
     is_favorite: Option<bool>,
     is_mastered: Option<bool>,
@@ -165,7 +170,7 @@ pub fn update_word_record(
     let existing: Option<WordRecord> = conn
         .query_row(
             "SELECT id, word, translation, source_lang, target_lang, context, phonetic, 
-                    example_sentence, tags, mastery_level, review_count, last_reviewed, 
+                    example_sentence, tags, ai_explanation, mastery_level, review_count, last_reviewed, 
                     created_at, updated_at, is_favorite, is_mastered 
              FROM word_records WHERE id = ?1",
             params![id],
@@ -187,13 +192,14 @@ pub fn update_word_record(
                     phonetic: row.get(6)?,
                     example_sentence: row.get(7)?,
                     tags,
-                    mastery_level: row.get(9)?,
-                    review_count: row.get(10)?,
-                    last_reviewed: row.get::<_, Option<i64>>(11)?.map(|v| v as u64),
-                    created_at: row.get::<_, i64>(12)? as u64,
-                    updated_at: row.get::<_, i64>(13)? as u64,
-                    is_favorite: row.get::<_, i32>(14)? != 0,
-                    is_mastered: row.get::<_, i32>(15)? != 0,
+                    ai_explanation: row.get(9)?,
+                    mastery_level: row.get(10)?,
+                    review_count: row.get(11)?,
+                    last_reviewed: row.get::<_, Option<i64>>(12)?.map(|v| v as u64),
+                    created_at: row.get::<_, i64>(13)? as u64,
+                    updated_at: row.get::<_, i64>(14)? as u64,
+                    is_favorite: row.get::<_, i32>(15)? != 0,
+                    is_mastered: row.get::<_, i32>(16)? != 0,
                 })
             },
         )
@@ -220,6 +226,9 @@ pub fn update_word_record(
     if let Some(tags) = tags {
         record.tags = tags;
     }
+    if let Some(ai_exp) = ai_explanation {
+        record.ai_explanation = Some(ai_exp);
+    }
     if let Some(ml) = mastery_level {
         record.mastery_level = ml;
     }
@@ -237,8 +246,8 @@ pub fn update_word_record(
     conn.execute(
         "UPDATE word_records 
          SET word = ?1, translation = ?2, context = ?3, phonetic = ?4, example_sentence = ?5, 
-             tags = ?6, mastery_level = ?7, updated_at = ?8, is_favorite = ?9, is_mastered = ?10 
-         WHERE id = ?11",
+             tags = ?6, ai_explanation = ?7, mastery_level = ?8, updated_at = ?9, is_favorite = ?10, is_mastered = ?11 
+         WHERE id = ?12",
         params![
             record.word,
             record.translation,
@@ -246,6 +255,7 @@ pub fn update_word_record(
             record.phonetic,
             record.example_sentence,
             tags_json,
+            record.ai_explanation,
             record.mastery_level,
             record.updated_at as i64,
             if record.is_favorite { 1 } else { 0 },
@@ -276,7 +286,7 @@ pub fn search_word_records(query: &str, app_data_dir: &Path) -> Result<Vec<WordR
     let mut stmt = conn
         .prepare(
             "SELECT id, word, translation, source_lang, target_lang, context, phonetic, 
-                    example_sentence, tags, mastery_level, review_count, last_reviewed, 
+                    example_sentence, tags, ai_explanation, mastery_level, review_count, last_reviewed, 
                     created_at, updated_at, is_favorite, is_mastered 
              FROM word_records
              WHERE lower(word) LIKE ?1 OR lower(translation) LIKE ?1
@@ -303,13 +313,14 @@ pub fn search_word_records(query: &str, app_data_dir: &Path) -> Result<Vec<WordR
                 phonetic: row.get(6)?,
                 example_sentence: row.get(7)?,
                 tags,
-                mastery_level: row.get(9)?,
-                review_count: row.get(10)?,
-                last_reviewed: row.get::<_, Option<i64>>(11)?.map(|v| v as u64),
-                created_at: row.get::<_, i64>(12)? as u64,
-                updated_at: row.get::<_, i64>(13)? as u64,
-                is_favorite: row.get::<_, i32>(14)? != 0,
-                is_mastered: row.get::<_, i32>(15)? != 0,
+                ai_explanation: row.get(9)?,
+                mastery_level: row.get(10)?,
+                review_count: row.get(11)?,
+                last_reviewed: row.get::<_, Option<i64>>(12)?.map(|v| v as u64),
+                created_at: row.get::<_, i64>(13)? as u64,
+                updated_at: row.get::<_, i64>(14)? as u64,
+                is_favorite: row.get::<_, i32>(15)? != 0,
+                is_mastered: row.get::<_, i32>(16)? != 0,
             })
         })
         .map_err(|e| format!("Failed to iterate word_record search: {}", e))?;
