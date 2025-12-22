@@ -6050,21 +6050,31 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
                   ref={inputRef}
                   type="text"
                   value={query}
+                  onCompositionUpdate={(e) => {
+                    // 输入法组合输入更新中，立即同步输入框的实际值到状态
+                    // 使用 flushSync 确保立即更新，避免状态延迟导致的字符丢失
+                    // 这是关键：必须立即同步，否则 React 会用旧状态覆盖输入框
+                    const currentValue = e.currentTarget.value;
+                    flushSync(() => {
+                      setQuery(currentValue);
+                    });
+                  }}
                   onCompositionEnd={(e) => {
                     // 输入法组合输入结束，更新状态
-                    // 在组合输入结束时，onChange 可能已经触发，但我们在 onChange 中已经忽略了
-                    // 所以这里需要手动更新一次状态
-                    startTransition(() => {
-                      setQuery(e.currentTarget.value);
+                    // 确保最终状态与输入框值一致
+                    const finalValue = e.currentTarget.value;
+                    flushSync(() => {
+                      setQuery(finalValue);
                     });
                   }}
                   onChange={(e) => {
                     // 检查是否是输入法组合输入事件
-                    // 使用原生事件的 isComposing 属性来判断
+                    // 只使用原生事件的 isComposing 属性来判断，更可靠
+                    const nativeEvent = e.nativeEvent as InputEvent;
+                    
                     // 如果正在进行输入法组合输入，忽略 onChange 事件
                     // 避免在组合输入过程中重复更新状态，导致字符重复
-                    // 组合输入会在 onCompositionEnd 时统一更新
-                    const nativeEvent = e.nativeEvent as InputEvent;
+                    // 组合输入会在 onCompositionUpdate 和 onCompositionEnd 时更新
                     if (nativeEvent.isComposing === true) {
                       return;
                     }
