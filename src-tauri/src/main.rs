@@ -349,11 +349,21 @@ fn main() {
                         }
                     }
                     "restart" => {
+                        // 清理快捷键钩子
+                        #[cfg(target_os = "windows")]
+                        {
+                            hotkey_handler::windows::cleanup_hotkeys();
+                        }
                         // 清理锁文件，以便重启后新实例可以正常启动
                         cleanup_lock_file();
                         app.restart();
                     }
                     "quit" => {
+                        // 清理快捷键钩子
+                        #[cfg(target_os = "windows")]
+                        {
+                            hotkey_handler::windows::cleanup_hotkeys();
+                        }
                         // 清理锁文件
                         cleanup_lock_file();
                         app.exit(0);
@@ -536,11 +546,13 @@ fn main() {
                                     let _ = settings::save_settings(&app_data_dir_plugin, &settings);
                                 }
                                 
-                                // 注册插件快捷键
+                                // 注册插件快捷键（会自动检测冲突并记录警告）
                                 let plugin_hotkeys = settings.plugin_hotkeys.clone();
                                 if !plugin_hotkeys.is_empty() {
                                     if let Err(e) = hotkey_handler::windows::update_plugin_hotkeys(plugin_hotkeys) {
                                         eprintln!("[Main] Failed to register plugin hotkeys: {}", e);
+                                    } else {
+                                        eprintln!("[Main] Registered {} plugin hotkeys", settings.plugin_hotkeys.len());
                                     }
                                 }
                                 

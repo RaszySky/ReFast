@@ -1074,16 +1074,20 @@ pub mod windows {
         pressed_modifiers_sorted.sort();
         let hotkey_signature = format!("{:?}:{}", pressed_modifiers_sorted, key_name);
         
-        // 全局防抖：检查是否在 200ms 内重复触发同一个快捷键组合（无论插件ID）
+        // 全局防抖：检查是否在 500ms 内重复触发同一个快捷键组合（无论插件ID）
+        // 增加防抖时间，防止 Windows 键盘钩子多次触发导致重复打开窗口
         let now = std::time::Instant::now();
         if let Some((last_signature, last_time)) = last_hotkey_triggered_guard.as_ref() {
-            if last_signature == &hotkey_signature && now.duration_since(*last_time).as_millis() < 200 {
-                // 在 200ms 内重复触发相同的快捷键组合，忽略
+            if last_signature == &hotkey_signature && now.duration_since(*last_time).as_millis() < 500 {
+                // 在 500ms 内重复触发相同的快捷键组合，忽略
                 return CallNextHookEx(windows_sys::Win32::UI::WindowsAndMessaging::HHOOK::default(), nCode, wParam, lParam);
             }
         }
         
         if let Some(ref sender) = *sender_guard {
+            // 先找到所有匹配的快捷键，检测冲突
+            let mut matched_ids: Vec<String> = Vec::new();
+            
             for (id, config) in hotkeys_guard.iter() {
                 // 检查修饰键是否匹配
                 let mut config_modifiers = config.modifiers.clone();
@@ -1092,24 +1096,46 @@ pub mod windows {
                 pressed_modifiers.sort();
                 
                 if config_modifiers == pressed_modifiers && config.key == key_name {
-                    // 插件级防抖：检查是否在 200ms 内重复触发同一个插件
-                    if let Some((last_id, last_time)) = last_triggered_guard.as_ref() {
-                        if last_id == id && now.duration_since(*last_time).as_millis() < 200 {
-                            // 在 200ms 内重复触发，忽略
-                            return CallNextHookEx(windows_sys::Win32::UI::WindowsAndMessaging::HHOOK::default(), nCode, wParam, lParam);
-                        }
-                    }
-                    
-                    // 记录触发时间和插件 ID
-                    *last_triggered_guard = Some((id.clone(), now));
-                    // 记录触发时间和快捷键签名
-                    *last_hotkey_triggered_guard = Some((hotkey_signature.clone(), now));
-                    
-                    // 匹配！发送事件
-                    let _ = sender.send(id.clone());
-                    // 阻止消息传递，防止其他程序响应相同的快捷键
-                    return 1; // 返回非零值阻止事件继续传播
+                    matched_ids.push(id.clone());
                 }
+            }
+            
+            // 如果找到匹配的快捷键
+            if !matched_ids.is_empty() {
+                // 检测冲突：如果有多个插件使用相同快捷键，记录警告
+                if matched_ids.len() > 1 {
+                    eprintln!(
+                        "[MultiHotkey] ⚠️  检测到快捷键 {} 被 {} 个插件共享: {:?}",
+                        hotkey_signature,
+                        matched_ids.len(),
+                        matched_ids
+                    );
+                    eprintln!(
+                        "[MultiHotkey] ⚠️  将触发第一个插件: {}",
+                        matched_ids[0]
+                    );
+                }
+                
+                // 只使用第一个匹配的插件 ID
+                let id = matched_ids[0].clone();
+                
+                // 插件级防抖：检查是否在 500ms 内重复触发同一个插件
+                if let Some((last_id, last_time)) = last_triggered_guard.as_ref() {
+                    if last_id == &id && now.duration_since(*last_time).as_millis() < 500 {
+                        // 在 500ms 内重复触发，忽略
+                        return CallNextHookEx(windows_sys::Win32::UI::WindowsAndMessaging::HHOOK::default(), nCode, wParam, lParam);
+                    }
+                }
+                
+                // 记录触发时间和插件 ID
+                *last_triggered_guard = Some((id.clone(), now));
+                // 记录触发时间和快捷键签名
+                *last_hotkey_triggered_guard = Some((hotkey_signature.clone(), now));
+                
+                // 匹配！发送事件（只发送一次）
+                let _ = sender.send(id);
+                // 阻止消息传递，防止其他程序响应相同的快捷键
+                return 1; // 返回非零值阻止事件继续传播
             }
         }
         
@@ -1269,10 +1295,72 @@ pub mod windows {
         Ok(())
     }
     
+    /// 清理所有快捷键钩子（在程序退出时调用）
+    pub fn cleanup_hotkeys() {
+        let manager = MULTI_HOTKEY_MANAGER.clone();
+        
+        // 卸载键盘钩子
+        {
+            let mut hook_guard = manager.hook.lock().unwrap();
+            if let Some(h) = *hook_guard {
+                unsafe {
+                    use windows_sys::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx;
+                    UnhookWindowsHookEx(h);
+                    eprintln!("[MultiHotkey] Cleaned up keyboard hook on exit");
+                }
+                *hook_guard = None;
+            }
+        }
+        
+        // 清理窗口句柄
+        {
+            let mut hwnd_guard = manager.hwnd.lock().unwrap();
+            *hwnd_guard = None;
+        }
+        
+        // 清空快捷键注册
+        {
+            let mut hotkeys_guard = manager.hotkeys.lock().unwrap();
+            hotkeys_guard.clear();
+        }
+        
+        eprintln!("[MultiHotkey] All hotkeys cleaned up");
+    }
+    
     /// 更新所有插件快捷键
     pub fn update_plugin_hotkeys(
         hotkeys: std::collections::HashMap<String, crate::settings::HotkeyConfig>,
     ) -> Result<(), String> {
+        // 检测快捷键冲突
+        let mut hotkey_to_plugins: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        
+        for (plugin_id, config) in hotkeys.iter() {
+            // 构建快捷键的唯一标识
+            let mut modifiers_sorted = config.modifiers.clone();
+            modifiers_sorted.sort();
+            let hotkey_signature = format!("{:?}:{}", modifiers_sorted, config.key);
+            
+            hotkey_to_plugins
+                .entry(hotkey_signature)
+                .or_insert_with(Vec::new)
+                .push(plugin_id.clone());
+        }
+        
+        // 检查冲突并记录警告
+        for (hotkey_sig, plugin_ids) in hotkey_to_plugins.iter() {
+            if plugin_ids.len() > 1 {
+                eprintln!(
+                    "[MultiHotkey] ⚠️  警告：快捷键 {} 被 {} 个插件共享: {:?}",
+                    hotkey_sig,
+                    plugin_ids.len(),
+                    plugin_ids
+                );
+                eprintln!(
+                    "[MultiHotkey] ⚠️  只有第一个匹配的插件会被触发，建议修改快捷键以避免冲突"
+                );
+            }
+        }
+        
         let manager = MULTI_HOTKEY_MANAGER.clone();
         let mut hotkeys_guard = manager.hotkeys.lock().unwrap();
         hotkeys_guard.clear();
@@ -1344,5 +1432,9 @@ pub mod windows {
         _hotkeys: HashMap<String, crate::settings::HotkeyConfig>,
     ) -> Result<(), String> {
         Err("Plugin hotkeys update is only supported on Windows".to_string())
+    }
+    
+    pub fn cleanup_hotkeys() {
+        // No-op on non-Windows platforms
     }
 }

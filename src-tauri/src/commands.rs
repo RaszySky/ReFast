@@ -5575,6 +5575,69 @@ pub fn save_plugin_hotkey(
     let app_data_dir = get_app_data_dir(&app)?;
     let mut settings = settings::load_settings(&app_data_dir)?;
     
+    // 如果设置了快捷键，检查冲突
+    if let Some(ref new_hotkey) = config {
+        // 检查与其他插件快捷键的冲突
+        for (other_plugin_id, other_hotkey) in settings.plugin_hotkeys.iter() {
+            if other_plugin_id != &plugin_id {
+                // 检查快捷键是否相同
+                let mut new_mods = new_hotkey.modifiers.clone();
+                new_mods.sort();
+                let mut other_mods = other_hotkey.modifiers.clone();
+                other_mods.sort();
+                
+                if new_mods == other_mods && new_hotkey.key == other_hotkey.key {
+                    return Err(format!(
+                        "快捷键冲突：与插件 \"{}\" 的快捷键相同，请修改后再保存",
+                        other_plugin_id
+                    ));
+                }
+            }
+        }
+        
+        // 检查与应用中心快捷键的冲突
+        if let Some(ref app_center_hotkey) = settings.app_center_hotkey {
+            let mut new_mods = new_hotkey.modifiers.clone();
+            new_mods.sort();
+            let mut center_mods = app_center_hotkey.modifiers.clone();
+            center_mods.sort();
+            
+            if new_mods == center_mods && new_hotkey.key == app_center_hotkey.key {
+                return Err("快捷键冲突：与应用中心快捷键相同，请修改后再保存".to_string());
+            }
+        }
+        
+        // 检查与启动器快捷键的冲突
+        if let Some(ref launcher_hotkey) = settings.hotkey {
+            let mut new_mods = new_hotkey.modifiers.clone();
+            new_mods.sort();
+            let mut launcher_mods = launcher_hotkey.modifiers.clone();
+            launcher_mods.sort();
+            
+            if new_mods == launcher_mods && new_hotkey.key == launcher_hotkey.key {
+                return Err("快捷键冲突：与启动器快捷键相同，请修改后再保存".to_string());
+            }
+        }
+        
+        // 检查与应用快捷键的冲突
+        for (app_path, app_hotkey) in settings.app_hotkeys.iter() {
+            let mut new_mods = new_hotkey.modifiers.clone();
+            new_mods.sort();
+            let mut app_mods = app_hotkey.modifiers.clone();
+            app_mods.sort();
+            
+            if new_mods == app_mods && new_hotkey.key == app_hotkey.key {
+                let app_name = app_path.split('/').last()
+                    .or_else(|| app_path.split('\\').last())
+                    .unwrap_or(app_path);
+                return Err(format!(
+                    "快捷键冲突：与应用 \"{}\" 的快捷键相同，请修改后再保存",
+                    app_name
+                ));
+            }
+        }
+    }
+    
     // 先克隆 config 用于后端注册
     let config_clone = config.clone();
     
@@ -5712,6 +5775,11 @@ pub fn save_app_center_hotkey(
 
 #[tauri::command]
 pub fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    // 清理快捷键钩子
+    #[cfg(target_os = "windows")]
+    {
+        crate::hotkey_handler::windows::cleanup_hotkeys();
+    }
     // 清理锁文件，以便重启后新实例可以正常启动
     use std::fs;
     use std::env;
@@ -6250,6 +6318,11 @@ pub fn install_update(
 /// 退出应用（用于安装更新后）
 #[tauri::command]
 pub fn quit_app(app_handle: tauri::AppHandle) -> Result<(), String> {
+    // 清理快捷键钩子
+    #[cfg(target_os = "windows")]
+    {
+        crate::hotkey_handler::windows::cleanup_hotkeys();
+    }
     app_handle.exit(0);
     Ok(())
 }

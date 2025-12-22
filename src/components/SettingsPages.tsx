@@ -1,5 +1,5 @@
 import { tauriApi } from "../api/tauri";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { UpdateSection } from "./UpdateSection";
 import type { SearchEngineConfig } from "../types";
 
@@ -360,6 +360,16 @@ export function LauncherSettingsPage({
   const [searchEngines, setSearchEngines] = useState<SearchEngineConfig[]>(
     settings.search_engines || []
   );
+  const isInitialMountRef = useRef(true);
+
+  // 标记初始化完成
+  useEffect(() => {
+    // 在下一个渲染周期标记初始化完成，确保跳过了首次渲染的 searchEngines 变化
+    const timer = setTimeout(() => {
+      isInitialMountRef.current = false;
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   // 当外部设置更新时同步
   useEffect(() => {
@@ -368,13 +378,16 @@ export function LauncherSettingsPage({
     }
   }, [settings.search_engines]);
 
-  // 当搜索引擎配置变化时，更新设置
+  // 当搜索引擎配置变化时，更新设置（跳过初始加载）
   useEffect(() => {
+    if (isInitialMountRef.current) {
+      return;
+    }
     onSettingsChange({
       ...settings,
       search_engines: searchEngines,
     });
-  }, [searchEngines]);
+  }, [searchEngines, onSettingsChange, settings]);
 
   const handleAddEngine = () => {
     setSearchEngines([

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue } from "react";
 import { flushSync } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -241,6 +241,14 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
   const lastSearchQueryRef = useRef<string>(""); // 用于去重，避免相同查询重复搜索
   const debounceTimeoutRef = useRef<number | null>(null); // 用于跟踪防抖定时器
   const combinedResultsUpdateTimeoutRef = useRef<number | null>(null); // 用于防抖延迟更新 combinedResults
+  const hasResultsRef = useRef(false); // 用于跟踪是否有结果，避免读取状态导致不必要的重新渲染
+  
+  // 辅助函数：使用 startTransition 包装状态更新，避免阻塞输入框
+  const updateSearchResults = useCallback(<T,>(setter: (value: T) => void, value: T) => {
+    startTransition(() => {
+      setter(value);
+    });
+  }, []);
   const currentLoadResultsRef = useRef<SearchResult[]>([]); // 跟踪当前正在加载的结果，用于验证是否仍有效
   const horizontalResultsRef = useRef<SearchResult[]>([]); // 跟踪当前的横向结果，用于防止被覆盖
   const closeOnBlurRef = useRef(true);
@@ -847,11 +855,13 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       unsubscribeTriggered = await listen<string>("plugin-hotkey-triggered", async (event) => {
         const pluginId = event.payload;
         
-        // 前端防抖：检查是否在 200ms 内重复触发同一个插件
+        // 前端防抖：检查是否在 500ms 内重复触发同一个插件
+        // 增加防抖时间，防止重复打开窗口
         const now = Date.now();
         if (lastTriggeredRef.current) {
           const { pluginId: lastId, time: lastTime } = lastTriggeredRef.current;
-          if (lastId === pluginId && now - lastTime < 200) {
+          if (lastId === pluginId && now - lastTime < 500) {
+            console.log(`[PluginHotkeys] ⏭️  Ignored duplicate trigger for plugin: ${pluginId} (within 500ms)`);
             return;
           }
         }
@@ -1401,24 +1411,26 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
 
   // Search applications, file history, and Everything when query changes (with debounce)
   useEffect(() => {
-    // 清除之前的防抖定时器
+    const trimmedQuery = query.trim();
+    
+    // 优化：如果 trimmedQuery 没有真正变化（例如 "a " → "a"），直接返回，避免不必要的操作
+    // 这样可以避免退格时因为空格变化导致的卡顿
+    if (trimmedQuery === lastSearchQueryRef.current) {
+      // 如果查询为空且之前也为空，直接返回
+      if (trimmedQuery === "") {
+        return;
+      }
+      // 如果查询相同且有结果，直接返回，不重置防抖定时器
+      if (hasResultsRef.current) {
+        return;
+      }
+      // 如果查询相同但没有结果，继续执行搜索逻辑（可能是结果被清空了）
+    }
+    
+    // 清除之前的防抖定时器（只有在查询真正变化时才清除）
     if (debounceTimeoutRef.current !== null) {
       clearTimeout(debounceTimeoutRef.current);
       debounceTimeoutRef.current = null;
-    }
-
-    const trimmedQuery = query.trim();
-    
-    // 如果查询改变了，立即清空结果，避免在防抖期间显示旧结果
-    if (trimmedQuery !== lastSearchQueryRef.current && trimmedQuery !== "") {
-      setFilteredApps([]);
-      setFilteredFiles([]);
-      setFilteredMemos([]);
-      setFilteredPlugins([]);
-      setEverythingResults([]);
-      setEverythingTotalCount(null);
-      setEverythingCurrentCount(0);
-      setDirectPathResult(null);
     }
     
     if (trimmedQuery === "") {
@@ -1448,6 +1460,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       setResults([]);
       setSelectedIndex(0);
       setIsSearchingEverything(false);
+      hasResultsRef.current = false;
       return;
     }
     
@@ -1458,30 +1471,9 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       setIsAiLoading(false);
     }
     
-    // Extract URLs from query (同步操作，不需要防抖)
-    const urls = extractUrls(query);
-    setDetectedUrls(urls);
-    
-    // Extract email addresses from query (同步操作，不需要防抖)
-    const emails = extractEmails(query);
-    setDetectedEmails(emails);
-    
-    // Check if query is valid JSON (同步操作，不需要防抖)
-    if (isValidJson(query)) {
-      setDetectedJson(query.trim());
-    } else {
-      setDetectedJson(null);
-    }
-    
-    // 如果查询与上次相同，跳过搜索（去重机制）
-    // 但是，如果结果为空（可能是用户全选后再次输入相同内容导致结果被清空），应该重新搜索
-    const hasResults = filteredApps.length > 0 || filteredFiles.length > 0 || filteredMemos.length > 0 || 
-                       filteredPlugins.length > 0 || everythingResults.length > 0;
-
-    if (trimmedQuery === lastSearchQueryRef.current && hasResults) {
-
-      return;
-    }
+    // 优化：不在输入时立即清空结果，而是在防抖定时器触发时清空
+    // 这样可以避免每次输入都触发大量状态更新导致的卡顿
+    // 输入框的响应会更流畅
     
     // Debounce search to avoid too many requests
     // 优化防抖时间：与 EverythingSearchWindow 保持一致，提升响应速度
@@ -1506,12 +1498,46 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         return;
       }
       
+      // 在防抖定时器触发时清空结果，而不是在输入时清空
+      // 使用 startTransition 包装清空操作，避免阻塞后续的输入
+      if (trimmedQuery !== lastSearchQueryRef.current) {
+        startTransition(() => {
+          setFilteredApps([]);
+          setFilteredFiles([]);
+          setFilteredMemos([]);
+          setFilteredPlugins([]);
+          setEverythingResults([]);
+          setEverythingTotalCount(null);
+          setEverythingCurrentCount(0);
+          setDirectPathResult(null);
+        });
+        hasResultsRef.current = false;
+      }
+      
+      // Extract URLs from query（移到防抖内部，避免每次输入都执行）
+      // 使用 startTransition 包装，避免阻塞后续的输入
+      startTransition(() => {
+        const urls = extractUrls(query);
+        setDetectedUrls(urls);
+        
+        // Extract email addresses from query（移到防抖内部）
+        const emails = extractEmails(query);
+        setDetectedEmails(emails);
+        
+        // Check if query is valid JSON（移到防抖内部）
+        if (isValidJson(query)) {
+          setDetectedJson(query.trim());
+        } else {
+          setDetectedJson(null);
+        }
+      });
+      
       const isPathQuery = isLikelyAbsolutePath(trimmedQuery);
       
       // 检查是否已有相同查询的活跃会话（快速检查，避免重复搜索）
       const hasActiveSession = pendingSessionIdRef.current && currentSearchQueryRef.current === trimmedQuery;
-      const hasResults = filteredApps.length > 0 || filteredFiles.length > 0 || filteredMemos.length > 0 || 
-                         filteredPlugins.length > 0 || everythingResults.length > 0;
+      // 使用 ref 而不是直接读取状态，避免触发不必要的重新渲染
+      const hasResults = hasResultsRef.current;
       
       // 如果已有相同查询的活跃会话且有结果，跳过重复搜索
       if (hasActiveSession && hasResults) {
@@ -1559,6 +1585,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         setEverythingTotalCount(null);
         setEverythingCurrentCount(0);
         setIsSearchingEverything(false);
+        hasResultsRef.current = false;
         // 关闭当前会话
         const oldSessionId = pendingSessionIdRef.current;
         if (oldSessionId) {
@@ -1570,7 +1597,10 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         currentSearchQueryRef.current = "";
         displayedSearchQueryRef.current = "";
       } else {
-        setDirectPathResult(null);
+        // 使用 startTransition 包装，避免阻塞后续的输入
+        startTransition(() => {
+          setDirectPathResult(null);
+        });
         
         // Everything 搜索立即执行，不延迟
         if (isEverythingAvailable) {
@@ -1582,29 +1612,33 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       }
       
       // ========== 性能优化：并行执行所有搜索 ==========
-      // 系统文件夹和文件历史搜索立即执行
-      Promise.all([
-        searchSystemFolders(trimmedQuery),
-        searchFileHistory(trimmedQuery),
-      ]).catch((error) => {
-        console.error("[搜索错误] 并行搜索失败:", error);
-      });
-      
-      // 应用搜索延迟1秒执行，避免阻塞其他搜索
-      // setTimeout(() => {
-      //   searchApplications(trimmedQuery).catch((error) => {
-      //     console.error("[搜索错误] 应用搜索失败:", error);
-      //   });
-      // }, 51000);
-      
-      console.log(`[搜索流程] 准备调用 searchApplications: query="${trimmedQuery}"`);
-      searchApplications(trimmedQuery).catch((error) => {
-        console.error("[搜索错误] searchApplications 调用失败:", error);
-      });
-      
-      // 备忘录和插件搜索是纯前端过滤，立即执行（不会阻塞）
-      searchMemos(trimmedQuery);
-      handleSearchPlugins(trimmedQuery);
+      // 使用 setTimeout(0) 将搜索操作推迟到下一个事件循环，避免阻塞防抖定时器
+      // 这样可以让输入框更快响应，即使搜索函数正在执行
+      setTimeout(() => {
+        // 系统文件夹和文件历史搜索立即执行
+        Promise.all([
+          searchSystemFolders(trimmedQuery),
+          searchFileHistory(trimmedQuery),
+        ]).catch((error) => {
+          console.error("[搜索错误] 并行搜索失败:", error);
+        });
+        
+        // 应用搜索延迟1秒执行，避免阻塞其他搜索
+        // setTimeout(() => {
+        //   searchApplications(trimmedQuery).catch((error) => {
+        //     console.error("[搜索错误] 应用搜索失败:", error);
+        //   });
+        // }, 51000);
+        
+        console.log(`[搜索流程] 准备调用 searchApplications: query="${trimmedQuery}"`);
+        searchApplications(trimmedQuery).catch((error) => {
+          console.error("[搜索错误] searchApplications 调用失败:", error);
+        });
+        
+        // 备忘录和插件搜索是纯前端过滤，立即执行（不会阻塞）
+        searchMemos(trimmedQuery);
+        handleSearchPlugins(trimmedQuery);
+      }, 0);
     }, debounceTime) as unknown as number;
     
     debounceTimeoutRef.current = timeoutId;
@@ -1618,11 +1652,17 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, isEverythingAvailable]);
 
+  // 同步更新 hasResultsRef，用于优化查询去重检查
+  useEffect(() => {
+    hasResultsRef.current = filteredApps.length > 0 || filteredFiles.length > 0 || filteredMemos.length > 0 || 
+                             filteredPlugins.length > 0 || everythingResults.length > 0;
+  }, [filteredApps, filteredFiles, filteredMemos, filteredPlugins, everythingResults]);
+
   const searchMemos = async (q: string) => {
     try {
       // Don't search if query is empty
       if (!q || q.trim() === "") {
-        setFilteredMemos([]);
+        updateSearchResults(setFilteredMemos, []);
         return;
       }
       
@@ -1644,14 +1684,14 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       
       // Only update if query hasn't changed
       if (query.trim() === q.trim()) {
-        setFilteredMemos(filtered);
+        updateSearchResults(setFilteredMemos, filtered);
       } else {
-        setFilteredMemos([]);
+        updateSearchResults(setFilteredMemos, []);
       }
     } catch (error) {
       console.error("Failed to search memos:", error);
       if (!q || q.trim() === "") {
-        setFilteredMemos([]);
+        updateSearchResults(setFilteredMemos, []);
       }
     }
   };
@@ -1659,7 +1699,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
   const handleSearchPlugins = useCallback((q: string) => {
     // Don't search if query is empty
     if (!q || q.trim() === "") {
-      setFilteredPlugins([]);
+      updateSearchResults(setFilteredPlugins, []);
       return;
     }
     
@@ -1667,35 +1707,48 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     
     // Only update if query hasn't changed
     if (query.trim() === q.trim()) {
-      setFilteredPlugins(filtered.map(p => ({ id: p.id, name: p.name, description: p.description })));
+      updateSearchResults(setFilteredPlugins, filtered.map(p => ({ id: p.id, name: p.name, description: p.description })));
     } else {
-      setFilteredPlugins([]);
+      updateSearchResults(setFilteredPlugins, []);
     }
-  }, [query]);
+  }, [query, updateSearchResults]);
 
 
   // 处理绝对路径直达：存在则生成一个临时文件结果，减少 Everything/系统目录压力
   const handleDirectPathLookup = useCallback(async (rawPath: string) => {
     try {
       const result = await tauriApi.checkPathExists(rawPath);
-      // 只在查询未变化时更新
+      // 只在查询未变化时更新，使用 startTransition 避免阻塞输入
       if (query.trim() === rawPath.trim() && result) {
-        setDirectPathResult(result);
+        startTransition(() => {
+          setDirectPathResult(result);
+        });
       } else if (query.trim() === rawPath.trim()) {
-        setDirectPathResult(null);
+        startTransition(() => {
+          setDirectPathResult(null);
+        });
       }
     } catch (error) {
       console.error("Direct path lookup failed:", error);
       if (query.trim() === rawPath.trim()) {
-        setDirectPathResult(null);
+        startTransition(() => {
+          setDirectPathResult(null);
+        });
       }
     }
   }, [query]);
 
 
   // Combine apps, files, Everything results, and URLs into results when they change
-  // 使用 useMemo 优化，避免不必要的重新计算
-  const combinedResults = useMemo(() => {
+  // 使用 useState + useEffect 替代 useMemo，在 useEffect 中使用 startTransition 异步计算
+  // 这样可以避免 useMemo 的同步计算阻塞输入响应
+  const [combinedResultsRaw, setCombinedResultsRaw] = useState<SearchResult[]>([]);
+  
+  useEffect(() => {
+    // 使用 requestIdleCallback 或 setTimeout 延迟计算，避免阻塞输入响应
+    // 这样可以让输入框保持响应，不会因为结果计算而卡顿
+    const scheduleCompute = () => {
+      const computeCombinedResults = () => {
     // 如果查询为空且没有 AI 回答，直接返回空数组，不显示任何结果
     // 如果有 AI 回答，即使查询为空也要显示
     if (query.trim() === "" && !aiAnswer) {
@@ -1919,15 +1972,18 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     
     // 检测搜索意图（优先显示在结果列表顶部）
     const searchIntent = detectSearchIntent(query, searchEngines);
-    const searchResultItem = searchIntent ? getSearchResultItem(searchIntent.engine, searchIntent.keyword) : null;
-    const searchResult: SearchResult | null = searchResultItem ? {
-      ...searchResultItem,
-      type: "search" as const,
-    } : null;
+    
+    // 如果检测到搜索引擎前缀，只返回搜索引擎结果，屏蔽其他所有搜索
+    if (searchIntent) {
+      const searchResultItem = getSearchResultItem(searchIntent.engine, searchIntent.keyword);
+      const searchResult: SearchResult = {
+        ...searchResultItem,
+        type: "search" as const,
+      };
+      return [searchResult];
+    }
     
     let otherResults: SearchResult[] = [
-      // 如果检测到搜索意图，将其添加到结果列表的最前面
-      ...(searchResult ? [searchResult] : []),
       // 如果有 AI 回答，将其添加到结果列表的前面
       ...(aiAnswer ? [{
         type: "ai" as const,
@@ -2736,9 +2792,29 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     });
     
     return allResultsToSort;
+      };
+      
+      // 使用 startTransition 标记状态更新为非紧急更新
+      startTransition(() => {
+        const results = computeCombinedResults();
+        setCombinedResultsRaw(results);
+      });
+    };
+    
+    // 使用 requestIdleCallback 或 setTimeout 延迟计算，避免阻塞输入响应
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(scheduleCompute, { timeout: 100 });
+    } else {
+      setTimeout(scheduleCompute, 0);
+    }
   }, [filteredApps, filteredFiles, filteredMemos, filteredPlugins, everythingResults, detectedUrls, detectedEmails, detectedJson, openHistory, urlRemarks, query, aiAnswer, searchEngines]);
 
-  // 防抖延迟更新 combinedResults，避免多个搜索结果异步返回时频繁重新排序
+  // 使用 useDeferredValue 延迟 combinedResults 的更新，让输入框保持响应
+  // 当用户快速输入时，React 会延迟更新 combinedResults，优先处理输入事件
+  // 这样可以避免 combinedResults 的耗时计算（66-76ms）阻塞输入响应
+  const combinedResults = useDeferredValue(combinedResultsRaw);
+  
+  // 防抖延迟更新 debouncedCombinedResults，避免多个搜索结果异步返回时频繁重新排序
   const [debouncedCombinedResults, setDebouncedCombinedResults] = useState<SearchResult[]>([]);
   
   useEffect(() => {
@@ -2753,7 +2829,13 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     const delay = filteredApps.length > 0 ? 0 : 5;
     
     combinedResultsUpdateTimeoutRef.current = setTimeout(() => {
-      setDebouncedCombinedResults(combinedResults);
+      // 使用 startTransition 标记结果更新为非紧急更新
+      // 这样可以让输入框保持响应，不会因为结果列表更新而卡顿
+      startTransition(() => {
+        setDebouncedCombinedResults(combinedResults);
+        // 更新 debouncedResultsQueryRef 为当前查询，用于验证结果是否与当前查询匹配
+        debouncedResultsQueryRef.current = queryRef.current;
+      });
     }, delay) as unknown as number;
     
     return () => {
@@ -3000,8 +3082,25 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     return { horizontal, vertical };
   };
 
+  // 使用 ref 跟踪最后一次加载结果时的查询，用于验证结果是否仍然有效
+  const lastLoadQueryRef = useRef<string>("");
+  // 使用 ref 跟踪 debouncedCombinedResults 对应的查询，用于验证结果是否与当前查询匹配
+  const debouncedResultsQueryRef = useRef<string>("");
+  
   // 分批加载结果的函数
   const loadResultsIncrementally = (allResults: SearchResult[]) => {
+    const currentQuery = queryRef.current;
+    
+    // 重要：如果查询已经变化，说明这些结果是过时的，不应该加载
+    // 这样可以避免快速输入时使用旧查询的结果导致卡顿和显示错误
+    // 注意：如果 lastLoadQueryRef 为空字符串，说明是第一次加载，应该允许
+    if (lastLoadQueryRef.current !== "" && currentQuery.trim() !== lastLoadQueryRef.current.trim()) {
+      return;
+    }
+    
+    // 更新最后一次加载的查询（在检查之后更新，确保下次检查能正确工作）
+    lastLoadQueryRef.current = currentQuery;
+    
     // 取消之前的增量加载（包括 animationFrame 和 setTimeout）
     if (incrementalLoadRef.current !== null) {
       cancelAnimationFrame(incrementalLoadRef.current);
@@ -3013,7 +3112,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     }
 
     // 如果 query 为空且没有结果（包括 AI 回答），直接清空结果并返回
-    if (queryRef.current.trim() === "" && allResults.length === 0) {
+    if (currentQuery.trim() === "" && allResults.length === 0) {
       clearAllResults({
         setResults,
         setHorizontalResults,
@@ -3047,8 +3146,11 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     currentLoadResultsRef.current = allResults;
 
     // Split results into horizontal and vertical
-    const { horizontal, vertical } = splitResults(allResults, openHistory, query);
-    
+    // 再次检查查询是否仍然匹配（可能在 splitResults 计算期间查询已变化）
+    if (queryRef.current.trim() !== currentQuery.trim()) {
+      return;
+    }
+    const { horizontal, vertical } = splitResults(allResults, openHistory, currentQuery);
 
     const INITIAL_COUNT = 100; // 初始显示100条
     const INCREMENT = 50; // 每次增加50条
@@ -3060,7 +3162,6 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       // 重要：始终使用新排序的 horizontal，不要使用旧的 currentHorizontalRef
       // 这样可以确保横向列表始终按照最新的排序显示
       const finalHorizontal = horizontal; // 直接使用排序后的结果，不使用旧的引用
-      
       
       setResults(allResults);
       setHorizontalResults(finalHorizontal);
@@ -3076,6 +3177,9 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         setSelectedVerticalIndex(0);
       }
       currentLoadResultsRef.current = [];
+      // 成功加载后，更新 lastLoadQueryRef 为当前查询
+      // 这样下次查询变化时，检查才能正确工作
+      lastLoadQueryRef.current = currentQuery;
       return;
     }
 
@@ -3182,6 +3286,8 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         incrementalLoadRef.current = null;
         incrementalTimeoutRef.current = null;
         currentLoadResultsRef.current = [];
+        // 成功加载后，更新 lastLoadQueryRef 为当前查询
+        lastLoadQueryRef.current = currentQuery;
       }
     };
 
@@ -3247,11 +3353,25 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         setPastedImagePath(null);
         setPastedImageDataUrl(null);
       }
+      // 重要：查询变化时，重置 lastLoadQueryRef 为空字符串
+      // 这样 loadResultsIncrementally 第一次加载时会通过检查（因为 lastLoadQueryRef === ""）
+      // 之后成功加载后，lastLoadQueryRef 会被更新为当前查询
+      lastLoadQueryRef.current = "";
+      // 重置 debouncedResultsQueryRef，因为 debouncedCombinedResults 现在对应的是旧查询
+      debouncedResultsQueryRef.current = "";
       lastQueryInEffectRef.current = query;
     }
     // 使用分批加载来更新结果，避免一次性渲染大量DOM导致卡顿
     // 使用防抖后的结果，避免多个搜索结果异步返回时频繁重新排序
-    loadResultsIncrementally(debouncedCombinedResults);
+    // 重要：只有当 debouncedCombinedResults 对应的查询与当前查询匹配时才更新
+    // 这样可以避免快速输入时使用过时的结果导致卡顿
+    if (debouncedCombinedResults.length > 0 || query.trim() === "") {
+      // 检查 debouncedCombinedResults 是否与当前查询匹配
+      // 如果不匹配，说明这些结果是过时的，不应该加载
+      if (debouncedResultsQueryRef.current.trim() === query.trim() || query.trim() === "") {
+        loadResultsIncrementally(debouncedCombinedResults);
+      }
+    }
     
     // 清理函数：取消增量加载
     return () => {
@@ -3817,7 +3937,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
   const searchSystemFolders = async (searchQuery: string) => {
     try {
       if (!searchQuery || searchQuery.trim() === "") {
-        setSystemFolders([]);
+        updateSearchResults(setSystemFolders, []);
         return;
       }
       
@@ -3875,9 +3995,9 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       );
       
       if (query.trim() === searchQuery.trim()) {
-        setSystemFolders(results);
+        updateSearchResults(setSystemFolders, results);
       } else {
-        setSystemFolders([]);
+        updateSearchResults(setSystemFolders, []);
       }
     } catch (error) {
       console.error("Failed to search system folders:", error);
@@ -3962,7 +4082,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
   const searchApplications = async (searchQuery: string) => {
     try {
       // 清空旧结果，避免显示上一个搜索的结果
-      setFilteredApps([]);
+      updateSearchResults(setFilteredApps, []);
       
       // 验证查询
       if (!searchQuery || searchQuery.trim() === "") {
@@ -3988,9 +4108,9 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
             // 如果加载失败，回退到后端搜索
             const results = await tauriApi.searchApplications(searchQuery);
             if (query.trim() === searchQuery.trim()) {
-              setFilteredApps(results);
+              updateSearchResults(setFilteredApps, results);
             } else {
-              setFilteredApps([]);
+              updateSearchResults(setFilteredApps, []);
             }
             return;
           }
@@ -4002,7 +4122,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
 
       // 验证查询未改变，更新结果
       if (query.trim() === searchQuery.trim()) {
-        setFilteredApps(results);
+        updateSearchResults(setFilteredApps, results);
         
         // 检查是否有缺少图标的应用，触发图标提取（异步，不阻塞）
         const appsWithoutIcons = results.filter(app => !app.icon);
@@ -4013,11 +4133,11 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
           });
         }
       } else {
-        setFilteredApps([]);
+        updateSearchResults(setFilteredApps, []);
       }
     } catch (error) {
       console.error("Search applications failed:", error);
-      setFilteredApps([]);
+      updateSearchResults(setFilteredApps, []);
     }
   };
 
@@ -4154,7 +4274,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
     try {
       // Don't search if query is empty
       if (!searchQuery || searchQuery.trim() === "") {
-        setFilteredFiles([]);
+        updateSearchResults(setFilteredFiles, []);
         return;
       }
 
@@ -4169,9 +4289,9 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
           // 如果加载失败，回退到后端搜索
           const results = await tauriApi.searchFileHistory(searchQuery);
           if (query.trim() === searchQuery.trim()) {
-            setFilteredFiles(results);
+            updateSearchResults(setFilteredFiles, results);
           } else {
-            setFilteredFiles([]);
+            updateSearchResults(setFilteredFiles, []);
           }
           return;
         }
@@ -4184,7 +4304,7 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
       const currentQueryTrimmed = query.trim();
       const searchQueryTrimmed = searchQuery.trim();
       if (currentQueryTrimmed === searchQueryTrimmed) {
-        setFilteredFiles(results);
+        updateSearchResults(setFilteredFiles, results);
         
         // 检查 filteredFiles 中是否有可执行文件（.exe/.lnk），如果有，触发图标提取
         const executableFiles = results.filter(file => {
@@ -4298,10 +4418,12 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         pendingSessionIdRef.current = null;
         currentSearchQueryRef.current = "";
         displayedSearchQueryRef.current = "";
-        setEverythingResults([]);
-        setEverythingTotalCount(null);
-        setEverythingCurrentCount(0);
-        setIsSearchingEverything(false);
+        startTransition(() => {
+          setEverythingResults([]);
+          setEverythingTotalCount(null);
+          setEverythingCurrentCount(0);
+          setIsSearchingEverything(false);
+        });
         return;
       }
 
@@ -4313,10 +4435,12 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
         pendingSessionIdRef.current = null;
         currentSearchQueryRef.current = "";
         displayedSearchQueryRef.current = "";
-        setEverythingResults([]);
-        setEverythingTotalCount(null);
-        setEverythingCurrentCount(0);
-        setIsSearchingEverything(false);
+        startTransition(() => {
+          setEverythingResults([]);
+          setEverythingTotalCount(null);
+          setEverythingCurrentCount(0);
+          setIsSearchingEverything(false);
+        });
         return;
       }
 
@@ -4435,11 +4559,13 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
               return;
             }
 
-            // 更新结果
-            setEverythingResults(res.items);
-            setEverythingCurrentCount(res.items.length);
+            // 更新结果（使用 startTransition 避免阻塞输入框）
+            startTransition(() => {
+              setEverythingResults(res.items);
+              setEverythingCurrentCount(res.items.length);
+              setIsSearchingEverything(false);
+            });
             displayedSearchQueryRef.current = trimmed;
-            setIsSearchingEverything(false);
           })
           .catch((error) => {
             const currentPendingSessionId = pendingSessionIdRef.current;
@@ -4470,10 +4596,12 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
                 });
             }
             
-            setEverythingResults([]);
-            setEverythingTotalCount(null);
-            setEverythingCurrentCount(0);
-            setIsSearchingEverything(false);
+            startTransition(() => {
+              setEverythingResults([]);
+              setEverythingTotalCount(null);
+              setEverythingCurrentCount(0);
+              setIsSearchingEverything(false);
+            });
           });
       } catch (error) {
         creatingSessionQueryRef.current = null;
@@ -4496,10 +4624,12 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
             });
         }
         
-        setEverythingResults([]);
-        setEverythingTotalCount(null);
-        setEverythingCurrentCount(0);
-        setIsSearchingEverything(false);
+        startTransition(() => {
+          setEverythingResults([]);
+          setEverythingTotalCount(null);
+          setEverythingCurrentCount(0);
+          setIsSearchingEverything(false);
+        });
       }
     },
     [isEverythingAvailable, closeSessionSafe]
@@ -5920,7 +6050,14 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
                   ref={inputRef}
                   type="text"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => {
+                    // 使用 startTransition 标记 setQuery 为非紧急更新
+                    // 这样 React 会优先处理输入事件，延迟处理状态更新和相关的计算
+                    // 这样可以避免 combinedResults 的耗时计算（100-130ms）阻塞输入响应
+                    startTransition(() => {
+                      setQuery(e.target.value);
+                    });
+                  }}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   placeholder="输入应用名称或粘贴文件路径..."
