@@ -4702,6 +4702,9 @@ pub async fn show_memo_window(app: tauri::AppHandle) -> Result<(), String> {
         .center()
         .build()
         .map_err(|e| format!("创建备忘录窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())
@@ -4728,6 +4731,9 @@ pub async fn show_plugin_list_window(app: tauri::AppHandle) -> Result<(), String
         .center()
         .build()
         .map_err(|e| format!("创建应用中心窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())
@@ -4754,6 +4760,9 @@ pub async fn show_json_formatter_window(app: tauri::AppHandle) -> Result<(), Str
         .center()
         .build()
         .map_err(|e| format!("创建 JSON 格式化窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())
@@ -4780,6 +4789,9 @@ pub async fn show_translation_window(app: tauri::AppHandle) -> Result<(), String
         .center()
         .build()
         .map_err(|e| format!("创建翻译窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())
@@ -4806,6 +4818,9 @@ pub async fn show_hex_converter_window(app: tauri::AppHandle) -> Result<(), Stri
         .center()
         .build()
         .map_err(|e| format!("创建 ASCII 十六进制转换器窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())
@@ -4832,6 +4847,9 @@ pub async fn show_file_toolbox_window(app: tauri::AppHandle) -> Result<(), Strin
         .center()
         .build()
         .map_err(|e| format!("创建文件工具箱窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())
@@ -4858,6 +4876,9 @@ pub async fn show_calculator_pad_window(app: tauri::AppHandle) -> Result<(), Str
         .center()
         .build()
         .map_err(|e| format!("创建计算稿纸窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())
@@ -4884,6 +4905,9 @@ pub async fn show_everything_search_window(app: tauri::AppHandle) -> Result<(), 
         .center()
         .build()
         .map_err(|e| format!("创建 Everything 搜索窗口失败: {}", e))?;
+        
+        // 确保新创建的窗口显示并聚焦
+        show_and_focus_window(&window)?;
     }
 
     Ok(())

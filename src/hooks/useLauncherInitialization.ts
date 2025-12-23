@@ -10,6 +10,17 @@ import { tauriApi } from "../api/tauri";
 import type { AppInfo, FileHistoryItem, MemoItem, SearchEngineConfig, PluginContext } from "../types";
 import type { ResultStyle } from "../utils/themeConfig";
 
+// 全局标志，确保整个应用只有一个插件快捷键监听器
+let globalPluginHotkeyListenerSetup = false;
+let globalUnsubscribeTriggered: (() => void) | null = null;
+let globalUnsubscribeUpdated: (() => void) | null = null;
+// 使用同步标志 + Promise 锁，确保 setupListeners 只执行一次
+let setupListenersInProgress = false; // 同步标志，立即生效
+let setupListenersPromise: Promise<void> | null = null;
+// 全局执行锁，确保即使有多个监听器，也只有一个能执行插件
+// 使用同步标志 + 时间戳，确保原子性
+let pluginExecutionInProgress = new Map<string, number>(); // pluginId -> timestamp when execution started
+
 /**
  * 初始化选项接口
  */
@@ -331,26 +342,96 @@ export function useLauncherInitialization(
 
   // 监听插件快捷键（通过后端全局监听）
   const lastTriggeredRef = useRef<{ pluginId: string; time: number } | null>(null);
+  // 使用 useRef 存储最新的值，确保事件处理函数能访问到最新值
+  const queryRef = useRef(query);
+  const setQueryRef = useRef(setQuery);
+  const setSelectedIndexRef = useRef(setSelectedIndex);
+  
+  // 更新 ref 的值
+  queryRef.current = query;
+  setQueryRef.current = setQuery;
+  setSelectedIndexRef.current = setSelectedIndex;
 
   useEffect(() => {
-    // 监听后端发送的插件快捷键触发事件
-    let unsubscribeTriggered: (() => void) | null = null;
-    let unsubscribeUpdated: (() => void) | null = null;
+    // 如果全局监听器已经设置，直接返回
+    if (globalPluginHotkeyListenerSetup) {
+      return;
+    }
 
-    const setupListeners = async () => {
+    // 使用同步标志检查，确保原子性（在检查之前就设置标志）
+    if (setupListenersInProgress) {
+      return;
+    }
+
+    // 如果已经有正在进行的 Promise，等待它完成
+    if (setupListenersPromise) {
+      return;
+    }
+
+    // 立即设置同步标志，防止其他 useEffect 同时执行
+    setupListenersInProgress = true;
+    
+    // 立即创建并存储 Promise，防止其他 useEffect 同时执行
+    // 必须在检查之后立即赋值，确保原子性
+    setupListenersPromise = (async () => {
+      // 再次检查全局标志（在异步函数内部，可能已经被其他调用设置了）
+      if (globalPluginHotkeyListenerSetup) {
+        return;
+      }
+      
+      try {
+        // 先清理旧的全局监听器（如果存在）
+        // 注意：即使已经设置了标志，也要清理，以防有残留的监听器
+        if (globalUnsubscribeTriggered) {
+          globalUnsubscribeTriggered();
+          globalUnsubscribeTriggered = null;
+        }
+        if (globalUnsubscribeUpdated) {
+          globalUnsubscribeUpdated();
+          globalUnsubscribeUpdated = null;
+        }
+      
       // 监听插件快捷键触发事件（从后端发送）
-      unsubscribeTriggered = await listen<string>("plugin-hotkey-triggered", async (event) => {
+      const unsubscribeTriggered = await listen<string>("plugin-hotkey-triggered", async (event) => {
         const pluginId = event.payload;
+        const now = Date.now();
+
+        // 全局执行锁：使用同步检查-设置模式，确保只有一个监听器能执行
+        // 第一步：检查是否正在执行（1秒内）
+        const existingStartTime = pluginExecutionInProgress.get(pluginId);
+        if (existingStartTime && now - existingStartTime < 1000) {
+          console.log(
+            `[PluginHotkeys] ⏭️  Ignored duplicate trigger for plugin: ${pluginId} (execution in progress, started ${now - existingStartTime}ms ago)`
+          );
+          return;
+        }
+        
+        // 第二步：立即设置执行标志（同步操作，确保原子性）
+        pluginExecutionInProgress.set(pluginId, now);
+        
+        // 第三步：再次验证我们是否第一个（防止竞态条件）
+        // 如果在我们设置之后，有其他监听器也设置了，那么时间戳会不同
+        const verifyStartTime = pluginExecutionInProgress.get(pluginId);
+        if (verifyStartTime !== now) {
+          // 有其他监听器在我们之后设置了标志，说明我们不是第一个，应该退出
+          console.log(
+            `[PluginHotkeys] ⏭️  Ignored duplicate trigger for plugin: ${pluginId} (race condition detected, our time: ${now}, actual time: ${verifyStartTime})`
+          );
+          return;
+        }
 
         // 前端防抖：检查是否在 500ms 内重复触发同一个插件
         // 增加防抖时间，防止重复打开窗口
-        const now = Date.now();
         if (lastTriggeredRef.current) {
           const { pluginId: lastId, time: lastTime } = lastTriggeredRef.current;
           if (lastId === pluginId && now - lastTime < 500) {
             console.log(
               `[PluginHotkeys] ⏭️  Ignored duplicate trigger for plugin: ${pluginId} (within 500ms)`
             );
+            // 清除全局执行标志（只清除我们自己的）
+            if (pluginExecutionInProgress.get(pluginId) === now) {
+              pluginExecutionInProgress.delete(pluginId);
+            }
             return;
           }
         }
@@ -363,9 +444,9 @@ export function useLauncherInitialization(
         try {
           const { executePlugin } = await import("../plugins");
           const pluginContext: PluginContext = {
-            query,
-            setQuery,
-            setSelectedIndex,
+            query: queryRef.current,
+            setQuery: setQueryRef.current,
+            setSelectedIndex: setSelectedIndexRef.current,
             hideLauncher: async () => {
               await tauriApi.hideLauncher();
             },
@@ -374,31 +455,58 @@ export function useLauncherInitialization(
           await executePlugin(pluginId, pluginContext);
         } catch (error) {
           console.error(`[PluginHotkeys] ❌ Failed to execute plugin ${pluginId}:`, error);
+        } finally {
+          // 清除全局执行标志（只清除我们自己的）
+          // 立即清除锁，允许其他插件或同一插件的后续执行
+          // 防抖机制（500ms）已经在上面的 lastTriggeredRef 中处理了
+          if (pluginExecutionInProgress.get(pluginId) === now) {
+            pluginExecutionInProgress.delete(pluginId);
+          }
         }
       });
+      
+      // 存储 unsubscribe 函数到全局变量
+      globalUnsubscribeTriggered = unsubscribeTriggered;
+      // 标志已经在 useEffect 开始时设置，这里不需要再次设置
 
       // 监听插件快捷键更新事件
-      unsubscribeUpdated = await listen<Record<string, { modifiers: string[]; key: string }>>(
+      const unsubscribeUpdated = await listen<Record<string, { modifiers: string[]; key: string }>>(
         "plugin-hotkeys-updated",
         () => {
           // 插件快捷键更新事件处理（当前为空）
         }
       );
-    };
-
-    setupListeners().catch((error) => {
+      
+      // 存储 unsubscribe 函数到全局变量
+      globalUnsubscribeUpdated = unsubscribeUpdated;
+      // 设置全局标志
+      globalPluginHotkeyListenerSetup = true;
+      } catch (error) {
+        console.error("[PluginHotkeys] Failed to setup listeners:", error);
+        globalPluginHotkeyListenerSetup = false;
+        globalUnsubscribeTriggered = null;
+        globalUnsubscribeUpdated = null;
+      } finally {
+        // 清除同步标志和 Promise，允许后续重试
+        setupListenersInProgress = false;
+        setupListenersPromise = null;
+      }
+    })().catch((error) => {
       console.error("[PluginHotkeys] Failed to setup listeners:", error);
+      globalPluginHotkeyListenerSetup = false;
+      globalUnsubscribeTriggered = null;
+      globalUnsubscribeUpdated = null;
+      setupListenersInProgress = false;
+      setupListenersPromise = null;
     });
 
     return () => {
-      if (unsubscribeTriggered) {
-        unsubscribeTriggered();
-      }
-      if (unsubscribeUpdated) {
-        unsubscribeUpdated();
-      }
+      // 注意：我们不在这里清理全局监听器，因为可能有多个组件实例
+      // 全局监听器应该在应用关闭时清理，或者使用单例模式
+      // 但为了安全，如果这是最后一个组件实例，我们可以清理
+      // 这里我们保持全局监听器，因为它应该在整个应用生命周期内存在
     };
-  }, [query, setQuery, setSelectedIndex]);
+  }, []); // 移除依赖项，只在组件挂载时注册一次
 
   // Listen for Everything download progress events
   useEffect(() => {
