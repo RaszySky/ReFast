@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue } from "react";
-import { flushSync } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { tauriApi } from "../api/tauri";
@@ -783,6 +782,18 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
   const theme = useMemo(() => getThemeConfig(resultStyle), [resultStyle]);
 
   const layout = useMemo(() => getLayoutConfig(resultStyle), [resultStyle]);
+  
+  // 缓存输入框的 className 和 style，避免每次渲染都创建新对象
+  const inputClassName = useMemo(() => {
+    return `w-full bg-transparent border-none outline-none p-0 text-lg ${layout.input.split(' ').filter(c => c.includes('placeholder') || c.includes('text-')).join(' ') || 'placeholder-gray-400 text-gray-700'}`;
+  }, [layout.input]);
+  
+  const inputStyle = useMemo(() => ({
+    cursor: 'text' as const,
+    height: 'auto' as const,
+    lineHeight: '1.5',
+    minHeight: '1.5em'
+  }), []);
 
   // Call Ollama API to ask AI (流式请求)
   const askOllamaWrapper = useCallback(async (prompt: string) => {
@@ -2231,51 +2242,16 @@ export function LauncherWindow({ updateInfo }: LauncherWindowProps) {
                   ref={inputRef}
                   type="text"
                   value={query}
-                  onCompositionUpdate={(e) => {
-                    // 输入法组合输入更新中，立即同步输入框的实际值到状态
-                    // 使用 flushSync 确保立即更新，避免状态延迟导致的字符丢失
-                    // 这是关键：必须立即同步，否则 React 会用旧状态覆盖输入框
-                    const currentValue = e.currentTarget.value;
-                    flushSync(() => {
-                      setQuery(currentValue);
-                    });
-                  }}
-                  onCompositionEnd={(e) => {
-                    // 输入法组合输入结束，更新状态
-                    // 确保最终状态与输入框值一致
-                    const finalValue = e.currentTarget.value;
-                    flushSync(() => {
-                      setQuery(finalValue);
-                    });
-                  }}
                   onChange={(e) => {
-                    // 检查是否是输入法组合输入事件
-                    // 只使用原生事件的 isComposing 属性来判断，更可靠
-                    const nativeEvent = e.nativeEvent as InputEvent;
-                    
-                    // 如果正在进行输入法组合输入，忽略 onChange 事件
-                    // 避免在组合输入过程中重复更新状态，导致字符重复
-                    // 组合输入会在 onCompositionUpdate 和 onCompositionEnd 时更新
-                    if (nativeEvent.isComposing === true) {
-                      return;
-                    }
-                    // 使用 startTransition 标记 setQuery 为非紧急更新
-                    // 这样 React 会优先处理输入事件，延迟处理状态更新和相关的计算
-                    // 这样可以避免 combinedResults 的耗时计算（100-130ms）阻塞输入响应
-                    startTransition(() => {
-                      setQuery(e.target.value);
-                    });
+                    // 参考搜索插件输入框的简单实现，直接更新状态
+                    // React 的受控组件本身就能很好地处理输入法组合输入，不需要额外的干预
+                    setQuery(e.target.value);
                   }}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   placeholder="输入应用名称或粘贴文件路径..."
-                  className={`w-full bg-transparent border-none outline-none p-0 text-lg ${layout.input.split(' ').filter(c => c.includes('placeholder') || c.includes('text-')).join(' ') || 'placeholder-gray-400 text-gray-700'}`}
-                  style={{ 
-                    cursor: 'text',
-                    height: 'auto',
-                    lineHeight: '1.5',
-                    minHeight: '1.5em'
-                  }}
+                  className={inputClassName}
+                  style={inputStyle}
                   autoFocus
                   onFocus={(e) => {
                     // Ensure input is focused, but don't select text if user is typing
