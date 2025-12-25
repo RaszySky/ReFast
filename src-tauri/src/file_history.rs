@@ -800,3 +800,68 @@ pub fn launch_file(path: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_history_item_serialization() {
+        let item = FileHistoryItem {
+            path: "C:\\test\\file.txt".to_string(),
+            name: "file.txt".to_string(),
+            last_used: 1234567890,
+            use_count: 5,
+            is_folder: Some(false),
+            source: Some("file_history".to_string()),
+        };
+
+        let json = serde_json::to_string(&item).unwrap();
+        let deserialized: FileHistoryItem = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(item.path, deserialized.path);
+        assert_eq!(item.name, deserialized.name);
+        assert_eq!(item.last_used, deserialized.last_used);
+        assert_eq!(item.use_count, deserialized.use_count);
+    }
+
+    #[test]
+    fn test_file_history_item_defaults() {
+        let item = FileHistoryItem {
+            path: "C:\\test\\file.txt".to_string(),
+            name: "file.txt".to_string(),
+            last_used: 1234567890,
+            use_count: 1,
+            is_folder: None,
+            source: None,
+        };
+
+        // Test that optional fields can be None
+        assert!(item.is_folder.is_none());
+        assert!(item.source.is_none());
+    }
+
+    #[test]
+    fn test_file_history_item_folder_flag() {
+        let file_item = FileHistoryItem {
+            path: "C:\\test\\file.txt".to_string(),
+            name: "file.txt".to_string(),
+            last_used: 1234567890,
+            use_count: 1,
+            is_folder: Some(false),
+            source: None,
+        };
+
+        let folder_item = FileHistoryItem {
+            path: "C:\\test\\folder".to_string(),
+            name: "folder".to_string(),
+            last_used: 1234567890,
+            use_count: 1,
+            is_folder: Some(true),
+            source: None,
+        };
+
+        assert_eq!(file_item.is_folder, Some(false));
+        assert_eq!(folder_item.is_folder, Some(true));
+    }
+}

@@ -4148,3 +4148,165 @@ pub mod windows {
         Err("App launch is only supported on Windows".to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contains_chinese() {
+        assert!(windows::contains_chinese("你好"));
+        assert!(windows::contains_chinese("Hello 世界"));
+        assert!(!windows::contains_chinese("Hello"));
+        assert!(!windows::contains_chinese("123"));
+    }
+
+    #[test]
+    fn test_search_apps_exact_match() {
+        let apps = vec![
+            AppInfo {
+                name: "微信".to_string(),
+                path: "C:\\WeChat.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: Some("weixin".to_string()),
+                name_pinyin_initials: Some("wx".to_string()),
+            },
+            AppInfo {
+                name: "QQ".to_string(),
+                path: "C:\\QQ.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: None,
+                name_pinyin_initials: None,
+            },
+        ];
+
+        let results = windows::search_apps("微信", &apps);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].name, "微信");
+    }
+
+    #[test]
+    fn test_search_apps_pinyin_match() {
+        let apps = vec![
+            AppInfo {
+                name: "微信".to_string(),
+                path: "C:\\WeChat.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: Some("weixin".to_string()),
+                name_pinyin_initials: Some("wx".to_string()),
+            },
+        ];
+
+        let results = windows::search_apps("weixin", &apps);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].name, "微信");
+    }
+
+    #[test]
+    fn test_search_apps_pinyin_initials_match() {
+        let apps = vec![
+            AppInfo {
+                name: "微信".to_string(),
+                path: "C:\\WeChat.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: Some("weixin".to_string()),
+                name_pinyin_initials: Some("wx".to_string()),
+            },
+        ];
+
+        let results = windows::search_apps("wx", &apps);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].name, "微信");
+    }
+
+    #[test]
+    fn test_search_apps_partial_match() {
+        let apps = vec![
+            AppInfo {
+                name: "Chrome Browser".to_string(),
+                path: "C:\\Chrome.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: None,
+                name_pinyin_initials: None,
+            },
+        ];
+
+        let results = windows::search_apps("Chrome", &apps);
+        assert!(!results.is_empty());
+        assert!(results[0].name.contains("Chrome"));
+    }
+
+    #[test]
+    fn test_search_apps_empty_query() {
+        let apps = vec![
+            AppInfo {
+                name: "App1".to_string(),
+                path: "C:\\App1.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: None,
+                name_pinyin_initials: None,
+            },
+            AppInfo {
+                name: "App2".to_string(),
+                path: "C:\\App2.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: None,
+                name_pinyin_initials: None,
+            },
+        ];
+
+        let results = windows::search_apps("", &apps);
+        assert_eq!(results.len(), 2.min(10)); // Should return up to 10 apps
+    }
+
+    #[test]
+    fn test_search_apps_no_match() {
+        let apps = vec![
+            AppInfo {
+                name: "App1".to_string(),
+                path: "C:\\App1.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: None,
+                name_pinyin_initials: None,
+            },
+        ];
+
+        let results = windows::search_apps("NonExistent", &apps);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_apps_prioritizes_exact_match() {
+        let apps = vec![
+            AppInfo {
+                name: "Chrome Browser".to_string(),
+                path: "C:\\Chrome.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: None,
+                name_pinyin_initials: None,
+            },
+            AppInfo {
+                name: "Chrome".to_string(),
+                path: "C:\\ChromeShort.exe".to_string(),
+                icon: None,
+                description: None,
+                name_pinyin: None,
+                name_pinyin_initials: None,
+            },
+        ];
+
+        let results = windows::search_apps("Chrome", &apps);
+        assert!(!results.is_empty());
+        // Exact match should be prioritized
+        assert_eq!(results[0].name, "Chrome");
+    }
+}
